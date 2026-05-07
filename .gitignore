@@ -1,0 +1,7 @@
+Project
+ProjectGUI
+tester
+*.tar.gz
+raylib-5.0_linux_amd64/
+/tmp/os_test_*.txt
+*.o
