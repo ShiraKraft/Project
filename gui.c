@@ -332,3 +332,186 @@ void RunSystemTests(void)
     printf("║     All 4 system tests passed ✓      ║\n");
     printf("╚══════════════════════════════════════╝\n\n");
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  SECTION 4 – Milestone 3: Entity Path Animation
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define STEP_INTERVAL  0.3f   /* seconds between segment advances on an edge */
+#define NODE_WAIT_TIME 1.0f   /* seconds to pause at each intermediate node  */
+#define ENTITY_RADIUS  14.0f  /* visual radius of the moving circle          */
+
+/* ── A. InitEntityAnimation ─────────────────────────────────────────────────
+ *  Copies the Dijkstra path into the struct, places the entity on the first
+ *  node, and resets every timer / flag so the animation is ready to play.
+ * ────────────────────────────────────────────────────────────────────────── */
+void InitEntityAnimation(EntityAnimation*  anim,
+                         const int*        path,
+                         int               pathSize,
+                         const NodeVisual* nodes)
+{
+    if (!anim || !path || pathSize <= 0 || !nodes) return;
+
+    /* Copy path array */
+    for (int i = 0; i < pathSize && i < MAX_NODES; i++)
+        anim->path[i] = path[i];
+
+    anim->pathSize  = pathSize;
+    anim->pathIndex = 0;
+    anim->currentStep   = 0;
+    anim->timer         = 0.0f;
+    anim->isMoving      = false;   /* user must press Play */
+    anim->isWaiting     = false;
+    anim->reachedTarget = false;
+
+    /* Snap to the screen position of the first node */
+    int firstNode    = path[0];
+    anim->currentPos = (Vector2){ nodes[firstNode].x, nodes[firstNode].y };
+}
+
+/* ── B. UpdateEntityAnimation ───────────────────────────────────────────────
+ *  Called every frame.  Drives a two-state machine:
+ *    WAITING → entity pauses NODE_WAIT_TIME seconds at an intermediate node
+ *    MOVING  → entity advances one segment every STEP_INTERVAL seconds
+ *
+ *  Edge weight W (from the Graph adjacency list) defines how many segments
+ *  the edge is divided into; each segment takes STEP_INTERVAL seconds.
+ * ────────────────────────────────────────────────────────────────────────── */
+void UpdateEntityAnimation(EntityAnimation*  anim,
+                           const Graph*      g,
+                           const NodeVisual* nodes)
+{
+    /* ── 1. Guard ────────────────────────────────────────────────────────── */
+    if (!anim->isMoving || anim->reachedTarget) return;
+
+    /* ── 2. Accumulate delta time ────────────────────────────────────────── */
+    anim->timer += GetFrameTime();
+
+    /* ── 3. WAITING state ────────────────────────────────────────────────── */
+    if (anim->isWaiting) {
+        if (anim->timer >= NODE_WAIT_TIME) {
+            anim->timer     = 0.0f;
+            anim->isWaiting = false;   /* done waiting; start next edge */
+        }
+        return;   /* nothing else to do while waiting */
+    }
+
+    /* ── 4. Already at last node? ────────────────────────────────────────── */
+    if (anim->pathIndex >= anim->pathSize - 1) {
+        anim->reachedTarget = true;
+        anim->currentPos    = (Vector2){
+            nodes[anim->path[anim->pathSize - 1]].x,
+            nodes[anim->path[anim->pathSize - 1]].y
+        };
+        return;
+    }
+
+    /* ── 5. Identify current edge and its weight W ───────────────────────── */
+    int fromNode = anim->path[anim->pathIndex];
+    int toNode   = anim->path[anim->pathIndex + 1];
+
+    /* Walk the adjacency list of fromNode to find the weight to toNode */
+    int W = 1;   /* safe default */
+    Node* cur = g->adjList[fromNode];
+    while (cur) {
+        if (cur->dest == toNode) { W = cur->weight; break; }
+        cur = cur->next;
+    }
+    if (W <= 0) W = 1;   /* guard against zero-weight edges */
+
+    Vector2 from = { nodes[fromNode].x, nodes[fromNode].y };
+    Vector2 to   = { nodes[toNode].x,   nodes[toNode].y   };
+
+    /* ── 6. Advance one segment every STEP_INTERVAL seconds ─────────────── */
+    if (anim->timer >= STEP_INTERVAL) {
+        anim->timer -= STEP_INTERVAL;   /* keep sub-tick remainder */
+        anim->currentStep++;
+
+        /* ── 7. Finished all W segments on this edge? ───────────────────── */
+        if (anim->currentStep >= W) {
+            anim->currentStep = 0;
+            anim->pathIndex++;
+
+            /* ── 8. Reached the final destination? ─────────────────────── */
+            if (anim->pathIndex >= anim->pathSize - 1) {
+                anim->currentPos = (Vector2){
+                    nodes[anim->path[anim->pathSize - 1]].x,
+                    nodes[anim->path[anim->pathSize - 1]].y
+                };
+                anim->reachedTarget = true;
+                return;
+            }
+
+            /* Snap to the node we just arrived at */
+            int arrivedAt    = anim->path[anim->pathIndex];
+            anim->currentPos = (Vector2){ nodes[arrivedAt].x, nodes[arrivedAt].y };
+
+            /* Enter 1-second wait at this intermediate node */
+            anim->isWaiting = true;
+            anim->timer     = 0.0f;
+            return;
+        }
+    }
+
+    /* ── 9. Interpolate position along the current edge ─────────────────── */
+    /*  t goes from 0.0 (at `from`) toward 1.0 (at `to`) as steps complete  */
+    float t = (float)anim->currentStep / (float)W;
+    anim->currentPos.x = from.x + t * (to.x - from.x);
+    anim->currentPos.y = from.y + t * (to.y - from.y);
+}
+
+/* ── C. DrawEntity ──────────────────────────────────────────────────────────
+ *  Renders the entity as a layered circle (glow → body → highlight) at
+ *  currentPos, matching the dark aesthetic already used in RenderFrame().
+ *  On completion it draws a "Destination Reached!" banner.
+ * ────────────────────────────────────────────────────────────────────────── */
+void DrawEntity(const EntityAnimation* anim)
+{
+    if (!anim) return;
+
+    /* Outer glow ring */
+    DrawCircleV(anim->currentPos,
+                ENTITY_RADIUS + 5.0f,
+                (Color){ 255, 165, 0, 80 });
+
+    /* Main body — orange stands out against the dark background */
+    DrawCircleV(anim->currentPos, ENTITY_RADIUS,
+                (Color){ 255, 165, 0, 255 });
+
+    /* Inner highlight */
+    DrawCircleV(anim->currentPos, ENTITY_RADIUS * 0.40f,
+                (Color){ 255, 255, 255, 120 });
+
+    /* ── Completion banner ────────────────────────────────────────────────── */
+    if (anim->reachedTarget) {
+        const char* msg   = "Destination Reached!";
+        int         fs    = 26;
+        int         textW = MeasureText(msg, fs);
+        int         scrW  = GetScreenWidth();
+        int         scrH  = GetScreenHeight();
+        int         bx    = (scrW - textW) / 2 - 14;
+        int         by    = scrH - 58;
+
+        /* Semi-transparent backdrop */
+        DrawRectangle(bx, by, textW + 28, fs + 14,
+                      (Color){ 20, 20, 30, 200 });
+        DrawRectangleLinesEx(
+            (Rectangle){ (float)bx, (float)by,
+                         (float)(textW + 28), (float)(fs + 14) },
+            1.5f, (Color){ 255, 165, 0, 200 });
+
+        DrawText(msg, (scrW - textW) / 2, by + 7, fs,
+                 (Color){ 80, 220, 100, 255 });
+    }
+}
+
+/* ── D. TogglePlayStop ──────────────────────────────────────────────────────
+ *  Flips isMoving.  Call this from your UI button handler.
+ *  Has no effect once the entity has reached its target — call
+ *  InitEntityAnimation() first to restart the animation.
+ * ────────────────────────────────────────────────────────────────────────── */
+void TogglePlayStop(EntityAnimation* anim)
+{
+    if (!anim || anim->reachedTarget) return;
+    anim->isMoving = !anim->isMoving;
+}

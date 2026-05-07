@@ -32,4 +32,34 @@ void FreeGraphMemory(Graph* g);
 void CleanupResources(NodeVisual* nodes, int* path);
 void RunSystemTests(void);
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Milestone 3 – Entity Animation
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── EntityAnimation ─────────────────────────────────────────────────────── */
+typedef struct {
+    int     path[MAX_NODES]; /* node-ID sequence from Dijkstra              */
+    int     pathSize;        /* total nodes in path                         */
+    Vector2 currentPos;      /* current screen position of the entity       */
+    float   timer;           /* elapsed-time accumulator (fed GetFrameTime) */
+    int     currentStep;     /* segment index within the active edge (0..W) */
+    int     pathIndex;       /* which node in `path` we are leaving from    */
+    bool    isMoving;        /* Play / Stop toggle                          */
+    bool    isWaiting;       /* true while pausing 1 s at an intermediate   */
+    bool    reachedTarget;   /* true once entity arrives at path[pathSize-1]*/
+} EntityAnimation;
+
+/* ── 4. Animation Functions ─────────────────────────────────────────────── */
+void InitEntityAnimation  (EntityAnimation* anim,
+                           const int* path, int pathSize,
+                           const NodeVisual* nodes);
+
+void UpdateEntityAnimation(EntityAnimation* anim,
+                           const Graph* g,
+                           const NodeVisual* nodes);
+
+void DrawEntity           (const EntityAnimation* anim);
+
+void TogglePlayStop       (EntityAnimation* anim);
+
 #endif /* GUI_H */
