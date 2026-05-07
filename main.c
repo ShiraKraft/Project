@@ -7,11 +7,12 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Usage: %s <input_file>\n", argv[0]);
         return EXIT_FAILURE;
     }
-
     Query  query;
     Graph* graph = parseGraphFromFile(argv[1], &query);
 
-    dijkstra(graph, query.src, query.dst);
+    int dist[MAX_NODES], prev[MAX_NODES];
+    dijkstra(graph, query.src, dist, prev);
+    displayResults(dist, prev, query.src, query.dst, graph->vertices);
 
     freeGraph(graph);
     return EXIT_SUCCESS;
