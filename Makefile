@@ -1,51 +1,46 @@
 # ============================================================
-#  Makefile – OS Project (Milestone 1 + 2)
+#  Makefile – OS Project (Milestones 1, 2, 3)
 # ============================================================
 
 CC       = gcc
 CFLAGS   = -Wall -Wextra -std=c11 -g
-# tester uses popen/pclose which need gnu extensions
 TFLAGS   = -Wall -Wextra -g
 LIBS     = -lm
 
 RAYLIB_FLAGS = -I/usr/local/include -L/usr/local/lib \
                -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
-MAIN_SRC    = main.c graph.c
-TESTER_SRC  = tester.c graph.c
-GUI_SRC     = main.c graph.c gui.c
+DIJKSTRA_SRC = main.c graph.c
+SIM_SRC      = main.c graph.c Dijkstra.c gui.c
+TESTER_SRC   = tester.c graph.c
 
-TARGET      = Project
-TESTER_BIN  = tester
-GUI_BIN     = ProjectGUI
+.PHONY: all milestone1 milestone2 milestone3 clean test
 
-.PHONY: all clean test valgrind gui
+all: milestone1 milestone2 milestone3
 
-all: $(TARGET) $(TESTER_BIN)
+# Milestone 1 – terminal Dijkstra  (./dijkstra <file>)
+milestone1: $(DIJKSTRA_SRC) graph.h
+	$(CC) $(CFLAGS) -o dijkstra $(DIJKSTRA_SRC) $(LIBS)
+	@echo "Built: dijkstra"
 
-$(TARGET): $(MAIN_SRC) graph.h
-	$(CC) $(CFLAGS) -o $@ $(MAIN_SRC) $(LIBS)
-	@echo "Built: $(TARGET)"
+# Milestone 2 – static GUI  (./sim <file>)
+milestone2: $(SIM_SRC) graph.h gui.h
+	$(CC) $(CFLAGS) -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
+	@echo "Built: sim (milestone 2)"
 
-$(TESTER_BIN): $(TESTER_SRC) graph.h
-	$(CC) $(TFLAGS) -o $@ $(TESTER_SRC) $(LIBS)
-	@echo "Built: $(TESTER_BIN)"
+# Milestone 3 – animated cyber GUI  (./sim <file>)
+# Same binary as milestone 2; animation activates via the Play button.
+milestone3: $(SIM_SRC) graph.h gui.h
+	$(CC) $(CFLAGS) -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
+	@echo "Built: sim (milestone 3 – animation enabled)"
 
-gui: $(GUI_SRC) graph.h gui.h
-	$(CC) $(CFLAGS) -o $(GUI_BIN) $(GUI_SRC) $(LIBS) $(RAYLIB_FLAGS)
-	@echo "Built: $(GUI_BIN)"
+tester: $(TESTER_SRC) graph.h
+	$(CC) $(TFLAGS) -o tester $(TESTER_SRC) $(LIBS)
 
-test: $(TARGET) $(TESTER_BIN)
-	@echo ""
-	@echo "Running tests..."
-	@echo ""
-	./$(TESTER_BIN) ./$(TARGET)
-
-valgrind: $(TARGET) $(TESTER_BIN)
-	valgrind --leak-check=full --track-origins=yes \
-	         ./$(TESTER_BIN) ./$(TARGET)
+test: milestone1 tester
+	./tester ./dijkstra
 
 clean:
-	rm -f $(TARGET) $(TESTER_BIN) $(GUI_BIN)
+	rm -f dijkstra sim tester
 	rm -f /tmp/os_test_*.txt
 	@echo "Cleaned."
