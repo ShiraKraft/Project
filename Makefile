@@ -10,6 +10,10 @@ LIBS     = -lm
 RAYLIB_FLAGS = -I/usr/local/include -L/usr/local/lib \
                -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
+			   # Animation timing (milliseconds)
+STEP_DELAY_MS  = 300
+NODE_WAIT_MS   = 1000
+
 DIJKSTRA_SRC = main.c graph.c
 SIM_SRC      = main.c graph.c Dijkstra.c gui.c
 TESTER_SRC   = tester.c graph.c
@@ -29,18 +33,23 @@ milestone2: $(SIM_SRC) graph.h gui.h
 	@echo "Built: sim (milestone 2)"
 
 # Milestone 3 – animated cyber GUI  (./sim <file>)
-# Same binary as milestone 2; animation activates via the Play button.
+# STEP_DELAY_MS  = 300ms between animation steps along an edge
+# NODE_WAIT_MS   = 1000ms pause when the traveller arrives at a node
 milestone3: $(SIM_SRC) graph.h gui.h
-	$(CC) $(CFLAGS) -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
-	@echo "Built: sim (milestone 3 – animation enabled)"
-
+	$(CC) $(CFLAGS) \
+	    -DSTEP_DELAY_MS=$(STEP_DELAY_MS) \
+	    -DNODE_WAIT_MS=$(NODE_WAIT_MS) \
+	    -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
+	@echo "Built: sim (milestone 3 – animation enabled, step=$(STEP_DELAY_MS)ms node=$(NODE_WAIT_MS)ms)"
+ 
 tester: $(TESTER_SRC) graph.h
 	$(CC) $(TFLAGS) -o tester $(TESTER_SRC) $(LIBS)
-
+ 
 test: milestone1 tester
 	./tester ./dijkstra
-
+ 
 clean:
 	rm -f dijkstra sim tester
 	rm -f /tmp/os_test_*.txt
 	@echo "Cleaned."
+ 
