@@ -10,7 +10,7 @@ LIBS     = -lm
 RAYLIB_FLAGS = -I/usr/local/include -L/usr/local/lib \
                -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
-DIJKSTRA_SRC = main.c graph.c
+DIJKSTRA_SRC = main.c graph.c Dijkstra.c gui.c
 SIM_SRC      = main.c graph.c Dijkstra.c gui.c
 TESTER_SRC   = tester.c graph.c
 
@@ -19,8 +19,8 @@ TESTER_SRC   = tester.c graph.c
 all: milestone1 milestone2 milestone3
 
 # Milestone 1 – terminal Dijkstra  (./dijkstra <file>)
-milestone1: $(DIJKSTRA_SRC) graph.h
-	$(CC) $(CFLAGS) -o dijkstra $(DIJKSTRA_SRC) $(LIBS)
+milestone1: $(DIJKSTRA_SRC) graph.h gui.h
+	$(CC) $(CFLAGS) -o dijkstra $(DIJKSTRA_SRC) $(LIBS) $(RAYLIB_FLAGS)
 	@echo "Built: dijkstra"
 
 # Milestone 2 – static GUI  (./sim <file>)
@@ -31,7 +31,7 @@ milestone2: $(SIM_SRC) graph.h gui.h
 # Milestone 3 – animated cyber GUI  (./sim <file>)
 # Same binary as milestone 2; animation activates via the Play button.
 milestone3: $(SIM_SRC) graph.h gui.h
-	$(CC) $(CFLAGS) -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
+	$(CC) $(CFLAGS) -DSTEP_DELAY_MS=300 -DNODE_WAIT_MS=1000 -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
 	@echo "Built: sim (milestone 3 – animation enabled)"
 
 tester: $(TESTER_SRC) graph.h
