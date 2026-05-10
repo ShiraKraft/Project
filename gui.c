@@ -1,6 +1,21 @@
 /*
  * gui.c  –  Milestones 2 & 3: GUI, System, QA, and Cyber-Animation
  */
+/*
+ * Animation timing – injected by the Makefile milestone3 target via -D flags.
+ * Defaults are provided so the file compiles under milestone1/2 as well.
+ *
+ *   STEP_DELAY_MS  – milliseconds to traverse one unit of edge weight
+ *                    (e.g. weight 3 edge takes 3 × 300 = 900 ms)
+ *   NODE_WAIT_MS   – milliseconds to pause when arriving at an intermediate node
+ */
+
+#ifndef STEP_DELAY_MS
+#  define STEP_DELAY_MS 300
+#endif
+#ifndef NODE_WAIT_MS
+#  define NODE_WAIT_MS 1000
+#endif 
 
 #include "gui.h"
 #include "graph.h"
@@ -463,8 +478,8 @@ void UpdateAttackAnimation(const Graph* g, const NodeVisual* nodes,
     /* ── Phase A: waiting at an intermediate node ─────────────────────── */
     if (onNodePause) {
         nodeTimer += dt;                    /* accumulate nodeTimer */
-        if (nodeTimer >= 1.0f) {           /* 1000 ms elapsed */
-            onNodePause = false;
+       if (nodeTimer >= NODE_WAIT_MS / 1000.0f) {  /* NODE_WAIT_MS elapsed */
+            onNodePause = false; 
             nodeTimer   = 0.0f;
             currentPathIndex++;            /* advance to next hop */
             moveTimer   = 0.0f;
@@ -486,7 +501,7 @@ void UpdateAttackAnimation(const Graph* g, const NodeVisual* nodes,
 
     /* Look up W from Graph.adjList via helper */
     int W = EdgeWeight(g, u, v);
-    float edgeDuration = (float)W * 0.3f;          /* W × 300 ms in seconds */
+    float edgeDuration = (float)W * (STEP_DELAY_MS / 1000.0f); /* W × STEP_DELAY_MS in seconds */
 
     moveTimer += dt;
 
