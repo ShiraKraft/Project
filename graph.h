@@ -1,10 +1,12 @@
 //
-// graph.h  –  Unified header for OS Project (Milestone 1 + 2)
+// graph.h  –  Unified header for OS Project (Milestones 1-4)
 //
 #ifndef GRAPH_H
 #define GRAPH_H
 
 #include <stdbool.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 /* ═══════════════════════════════════════════════════════════════════
  *  Constants
@@ -63,19 +65,10 @@ Graph* initGraph(int vertices);
 void   addEdge(Graph* graph, int src, int dest, int weight);
 Graph* parseGraphFromFile(const char* filename, Query* query);
 int    findMinDistance(int dist[], int visited[], int n);
-
-/*
- * Two dijkstra signatures:
- *   - main.c path: dijkstra(graph, src, dst)  prints result directly
- *   - gui.c  path: dijkstra(graph, src, dist, prev)  fills arrays
- *
- * We expose only the array-filling version; displayResults() handles output.
- */
-void dijkstra(Graph* graph, int startNode, int* dist, int* prev);
-
-void printPath(int parent[], int j);
-void displayResults(int dist[], int parent[], int start, int end, int n);
-void freeGraph(Graph* graph);
+void   dijkstra(Graph* graph, int startNode, int* dist, int* prev);
+void   printPath(int parent[], int j);
+void   displayResults(int dist[], int parent[], int start, int end, int n);
+void   freeGraph(Graph* graph);
 
 /* ═══════════════════════════════════════════════════════════════════
  *  Dijkstra.c – declarations
@@ -87,5 +80,24 @@ PathResult run_dijkstra(CompactGraph *g, int src, int dst);
 void       reconstruct_path(int prev[], int dst, int src,
                             int *out_path, int *out_len);
 void       print_result(PathResult *r, int src, int dst);
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Milestone 4 – Worker Parsing & Graph Ingestion
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/*
+ * InitializeGraph – Load a graph from an N×N adjacency matrix text file.
+ * File format: first line = N, then N lines of N integers.
+ * 0 = no edge, positive = edge weight.
+ * Returns heap-allocated Graph* on success, NULL on failure.
+ */
+Graph* InitializeGraph(const char* filename);
+
+/*
+ * ParseInputRequest – Extract and validate "SRC DST" from a raw string.
+ * Used to decode requests received from a pipe or IPC channel.
+ * Returns true and fills outQuery on success, false on error.
+ */
+bool ParseInputRequest(const char* buffer, int numNodes, Query* outQuery);
 
 #endif /* GRAPH_H */
