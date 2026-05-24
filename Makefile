@@ -13,6 +13,7 @@ RAYLIB_FLAGS = -I/usr/local/include -L/usr/local/lib \
 DIJKSTRA_SRC = main.c graph.c Dijkstra.c gui.c
 SIM_SRC      = main.c graph.c Dijkstra.c gui.c
 TESTER_SRC   = tester.c graph.c
+M4_SRC = main_m4.c milestone4.c child.c gui.c graph.c Dijkstra.c
 
 .PHONY: all milestone1 milestone2 milestone3 clean test
 
@@ -33,6 +34,9 @@ milestone2: $(SIM_SRC) graph.h gui.h
 milestone3: $(SIM_SRC) graph.h gui.h
 	$(CC) $(CFLAGS) -DSTEP_DELAY_MS=300 -DNODE_WAIT_MS=1000 -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
 	@echo "Built: sim (milestone 3 – animation enabled)"
+
+milestone4: $(M4_SRC) milestone4.h gui.h graph.h child.h
+	$(CC) $(CFLAGS) -o sim $(M4_SRC) $(LIBS) $(RAYLIB_FLAGS)
 
 tester: $(TESTER_SRC) graph.h
 	$(CC) $(TFLAGS) -o tester $(TESTER_SRC) $(LIBS)
