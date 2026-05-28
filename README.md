@@ -35,6 +35,7 @@ TECH STACK
   Version Control:  GitHub
 
 
+
 FILE STRUCTURE
 
   main.c           Entry point, argument parsing, run, cleanup       Aviya Ben David
@@ -127,3 +128,16 @@ MILESTONES
   5   Inter-process communication           milestone5
   6   Synchronisation                       milestone6
   7   Scheduling algorithms                 milestone7
+  ## Milestone 4 Extension
+
+### Compilation Instructions
+To compile the project for Milestone 4, run the following command in the terminal:
+```bash
+make milestone4
+./sim imput.txt
+Design Overview
+In this milestone, the simulation transitions to a multi-process architecture.
+
+Parent Process: Parses the extended input file, calculates paths for all travelers using Dijkstra's algorithm, forks child processes, and runs the Raylib GUI loop to render all travelers simultaneously in different colors. Before exiting, the parent properly reaps all terminated children to prevent zombie processes.
+
+Child Processes: Each child process represents a single traveler. Upon creation via fork(), the child prints its status ([PID] started) and immediately exits, delegating movement management back to the parent configuration.
