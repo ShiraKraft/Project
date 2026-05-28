@@ -67,7 +67,7 @@ void DrawGraphNode(NodeVisual node)
 {
     DrawCircle((int)node.x + 3, (int)node.y + 3, node.radius, (Color){ 0, 0, 0, 60 });
     DrawCircleV((Vector2){ node.x, node.y }, node.radius, node.color);
-    DrawCircleLinesV((Vector2){ node.x, node.y }, node.radius, WHITE);
+    DrawCircleLines((int)node.x, (int)node.y, node.radius, WHITE);
     int fontSize = 16;
     int textW    = MeasureText(node.label, fontSize);
     DrawText(node.label, (int)(node.x - textW/2), (int)(node.y - fontSize/2), fontSize, WHITE);

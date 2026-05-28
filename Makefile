@@ -7,7 +7,7 @@ CFLAGS   = -Wall -Wextra -std=c11 -g
 TFLAGS   = -Wall -Wextra -g
 LIBS     = -lm
 
-RAYLIB_FLAGS = -I/usr/local/include -L/usr/local/lib \
+RAYLIB_FLAGS = -I. -L. \
                -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 DIJKSTRA_SRC = main.c graph.c Dijkstra.c gui.c

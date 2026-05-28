@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include "child.h"
 #include <stdio.h>
 #include <stdlib.h>
