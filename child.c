@@ -1,15 +1,5 @@
-/*
- * milestone5.c – Milestone 5: IPC-based Autonomous Travelers
- *
- * Key changes from Milestone 4:
- * - Children compute Dijkstra independently (parent no longer computes for them)
- * - Children send IPC messages to the parent on every node arrival
- * - Parent receives messages, prints log, and updates GUI
- * - Children print nothing to the terminal
- *
- * Run: ./sim <input_file>
- */
-
+#define _XOPEN_SOURCE 700
+#include "child.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
