@@ -71,81 +71,125 @@ void ParseExtendedInputFiles(ParentSimulation *sim,
                              const char *matrix_file,
                              const char *travelers_file)
 {
-    if (!sim || !matrix_file || !travelers_file) {
+    if (!sim || !matrix_file) {
         fprintf(stderr, "[parent] ParseExtendedInputFiles: NULL argument\n");
         exit(EXIT_FAILURE);
     }
 
-    /* ── 1a. Parse the graph matrix file ─────────────────────────── */
-    /* We re-use the existing parseGraphFromFile from graph.c.
-     * It fills a Query struct (src/dst) which we ignore here –
-     * traveler source/destinations come from travelers_file instead. */
-    Query dummy_query = {0, 0};
-    sim->graph = parseGraphFromFile(matrix_file, &dummy_query);
-    if (!sim->graph) {
-        fprintf(stderr, "[parent] Failed to parse graph from '%s'\n", matrix_file);
-        exit(EXIT_FAILURE);
-    }
-
-    /* ── 1b. Parse the travelers file ────────────────────────────── */
     /*
-     * Expected format:
-     *   <N>          ← total number of travelers
-     *   <src> <dst>  ← one line per traveler
-     *   ...
+     * Milestone 5 uses a SINGLE unified input file containing:
+     *   <num_nodes> <num_edges>
+     *   <src> <dst> <weight>   (x num_edges)
+     *   <num_travelers>
+     *   <src> <dst>            (x num_travelers)
+     *
+     * Both matrix_file and travelers_file point to the same path.
+     * We open the file once and read everything sequentially.
+     * Comment lines starting with '#' are skipped.
      */
-    FILE *fp = fopen(travelers_file, "r");
+    (void)travelers_file; /* same file – ignored */
+
+    FILE *fp = fopen(matrix_file, "r");
     if (!fp) {
-        perror("[parent] fopen travelers_file");
-        freeGraph(sim->graph);
+        perror("[parent] fopen input file");
         exit(EXIT_FAILURE);
     }
 
+    char line[256];
+
+    /* ── 1a. Read graph header ────────────────────────────────────── */
+    int num_nodes = 0, num_edges = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        /* skip blank lines and comment lines */
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
+        if (sscanf(line, "%d %d", &num_nodes, &num_edges) == 2) break;
+    }
+    if (num_nodes <= 0 || num_edges < 0) {
+        fprintf(stderr, "[parent] parse error: bad graph header\n");
+        fclose(fp);
+        exit(EXIT_FAILURE);
+    }
+
+    /* ── 1b. Allocate and fill the graph ─────────────────────────── */
+    sim->graph = initGraph(num_nodes);
+    if (!sim->graph) {
+        fprintf(stderr, "[parent] initGraph failed\n");
+        fclose(fp);
+        exit(EXIT_FAILURE);
+    }
+
+    int edges_read = 0;
+    while (edges_read < num_edges && fgets(line, sizeof(line), fp)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
+        int s, d, w;
+        if (sscanf(line, "%d %d %d", &s, &d, &w) == 3) {
+            addEdge(sim->graph, s, d, w);
+            edges_read++;
+        }
+    }
+
+    /* ── 1c. Read traveler count ──────────────────────────────────── */
     int n = 0;
-    if (fscanf(fp, "%d", &n) != 1 || n <= 0 || n > MAX_TRAVELERS) {
+    while (fgets(line, sizeof(line), fp)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
+        if (sscanf(line, "%d", &n) == 1) break;
+    }
+    if (n <= 0 || n > MAX_TRAVELERS) {
         fprintf(stderr,
-            "[parent] travelers file: invalid traveler count (%d). "
-            "Must be 1..%d\n", n, MAX_TRAVELERS);
+            "[parent] invalid traveler count (%d). Must be 1..%d\n",
+            n, MAX_TRAVELERS);
         fclose(fp);
         freeGraph(sim->graph);
+        sim->graph = NULL;
         exit(EXIT_FAILURE);
     }
     sim->total_travelers = n;
 
-    for (int i = 0; i < n; i++) {
+    /* ── 1d. Read each traveler's src / dst ──────────────────────── */
+    int travelers_read = 0;
+    while (travelers_read < n && fgets(line, sizeof(line), fp)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
+
         int s = 0, d = 0;
-        if (fscanf(fp, "%d %d", &s, &d) != 2) {
-            fprintf(stderr,
-                "[parent] travelers file: missing entry for traveler %d\n", i);
-            fclose(fp);
-            freeGraph(sim->graph);
-            exit(EXIT_FAILURE);
-        }
+        if (sscanf(line, "%d %d", &s, &d) != 2) continue;
+
         if (s < 0 || s >= sim->graph->vertices ||
             d < 0 || d >= sim->graph->vertices) {
             fprintf(stderr,
-                "[parent] travelers file: traveler %d has out-of-range "
-                "node (src=%d, dst=%d, vertices=%d)\n",
-                i, s, d, sim->graph->vertices);
+                "[parent] traveler %d out-of-range node "
+                "(src=%d, dst=%d, vertices=%d)\n",
+                travelers_read, s, d, sim->graph->vertices);
             fclose(fp);
             freeGraph(sim->graph);
+            sim->graph = NULL;
             exit(EXIT_FAILURE);
         }
-        sim->traveler_entries[i].src = s;
-        sim->traveler_entries[i].dst = d;
 
-        /* Pre-fill the ChildTraveler slot with known static info */
-        sim->travelers[i].src          = s;
-        sim->travelers[i].dst          = d;
-        sim->travelers[i].current_node = s;
-        sim->travelers[i].next_node    = -1;
-        sim->travelers[i].is_alive     = false; /* set true after fork() */
-        sim->travelers[i].pid          = -1;
+        sim->traveler_entries[travelers_read].src = s;
+        sim->traveler_entries[travelers_read].dst = d;
+
+        /* Pre-fill ChildTraveler slot */
+        sim->travelers[travelers_read].src          = s;
+        sim->travelers[travelers_read].dst          = d;
+        sim->travelers[travelers_read].current_node = s;
+        sim->travelers[travelers_read].next_node    = -1;
+        sim->travelers[travelers_read].is_alive     = false;
+        sim->travelers[travelers_read].pid          = -1;
+
+        travelers_read++;
     }
 
     fclose(fp);
-    printf("[parent] Loaded graph (%d nodes) and %d traveler(s).\n",
-           sim->graph->vertices, sim->total_travelers);
+    printf("[parent] Loaded graph (%d nodes, %d edges) and %d traveler(s).\n",
+           sim->graph->vertices, edges_read, sim->total_travelers);
     fflush(stdout);
 }
 
