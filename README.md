@@ -141,3 +141,11 @@ In this milestone, the simulation transitions to a multi-process architecture.
 Parent Process: Parses the extended input file, calculates paths for all travelers using Dijkstra's algorithm, forks child processes, and runs the Raylib GUI loop to render all travelers simultaneously in different colors. Before exiting, the parent properly reaps all terminated children to prevent zombie processes.
 
 Child Processes: Each child process represents a single traveler. Upon creation via fork(), the child prints its status ([PID] started) and immediately exits, delegating movement management back to the parent configuration.
+
+## Milestone 5: Autonomous Simulation & IPC Pipes
+
+In this milestone, the simulation was upgraded from a parent-driven architecture to a fully autonomous, distributed architecture using Inter-Process Communication (IPC):
+
+* **Autonomous Children:** Child processes no longer wait for standard `SIGUSR1` signals from the parent to advance. Instead, each child independently simulates its own journey along the pre-computed Dijkstra path, managing its timing via microsecond sleeps (`usleep`).
+* **IPC Communication (Pipes):** Communication is established using UNIX pipes. Each child redirects its pipe write-end to file descriptor `3` (via `dup2`) and autonomously writes structured `IPC_Message` packets to report its state.
+* **Non-Blocking Parent Ingestion:** The parent process reads from the travelers' pipes using non-blocking I/O (`O_NONBLOCK`). It intercepts real-time position updates and prints clean tracking logs directly to the terminal without causing any stutter or lag in the Raylib 60 FPS rendering loop.
