@@ -228,7 +228,7 @@ void WaitForAllChildren(SimulationManager* sim)
 /* ═══════════════════════════════════════════════════════════════════════════
  *  InitializeTravelerColors
  * ═══════════════════════════════════════════════════════════════════════════ */
-void InitializeTravelerColors(SimulationManager* sim)
+void InitializeTravelerColors_m4(SimulationManager* sim)
 {
     if (!sim) return;
 

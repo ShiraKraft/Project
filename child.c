@@ -1,5 +1,6 @@
 #define _XOPEN_SOURCE 700
 #include "child.h"
+#include "child_ipc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,10 +180,8 @@ static bool all_done(const SimulationManager *sim)
  *   3. Parent runs GUI loop reading IPC messages
  *   4. waitpid for all children
  * ════════════════════════════════════════════════════════════════════ */
-static void run_milestone5(SimulationManager *sim,
-                            Graph *g,
-                            const NodeVisual *nodes,
-                            const char *filename)
+ void run_milestone5(SimulationManager *sim, Graph *g, const NodeVisual *nodes, const char *filename)
+                        
 {
     int n = sim->traveler_count;
 
@@ -291,56 +290,71 @@ static void run_milestone5(SimulationManager *sim,
 
     cleanup_ipc_infrastructure();
 }
-
-/* ════════════════════════════════════════════════════════════════════
- * main
- * ════════════════════════════════════════════════════════════════════ */
-int main(int argc, char *argv[])
+/* ------------------------------------------------------------------ */
+/* Global flag – set by the signal handler, checked in the travel loop */
+/* ------------------------------------------------------------------ */
+static volatile sig_atomic_t g_terminate = 0;
+ 
+/* ------------------------------------------------------------------ */
+/* Signal handler                                                       */
+/* The parent sends SIGUSR1 when the traveler's journey is complete.   */
+/* ------------------------------------------------------------------ */
+static void handle_termination(int sig)
 {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <input_file>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    const char *filename = argv[1];
-
-    /* ── Read input file ─────────────────────────────────────────── */
-    Graph *g = NULL;
-    SimulationManager sim;
-    memset(&sim, 0, sizeof(sim));
-
-    if (!parse_input_file_m5(filename, &g, &sim)) {
-        fprintf(stderr, "Failed to parse: %s\n", filename);
-        return EXIT_FAILURE;
-    }
-
-    printf("[parent] loaded %d nodes, %d travelers\n",
-           g->vertices, sim.traveler_count);
-
-    /* ── Build graph layout ──────────────────────────────────────── */
-    NodeVisual nodes[MAX_NODES];
-    for (int i = 0; i < g->vertices; i++) {
-        nodes[i].id     = i;
-        nodes[i].radius = 24.0f;
-        nodes[i].color  = (Color){70, 130, 180, 255};
-        snprintf(nodes[i].label, sizeof(nodes[i].label), "%d", i);
-    }
-    Vector2 center = {600.0f, 400.0f};
-    CalculateCircularLayout(nodes, g->vertices, center, 280.0f);
-
-    /* ── Assign traveler colors ──────────────────────────────────── */
-    InitializeTravelerColors(&sim);
-
-    /* ── Open window ─────────────────────────────────────────────── */
-    InitGraphWindow(1200, 800, "OS Project - Milestone 5");
-
-    /* ── Run simulation ──────────────────────────────────────────── */
-    run_milestone5(&sim, g, nodes, filename);
-
-    /* ── Cleanup ─────────────────────────────────────────────────── */
-    CloseWindow();
-    freeGraph(g);
-
-    printf("[parent] done\n");
-    return EXIT_SUCCESS;
+    (void)sig;
+    g_terminate = 1;
 }
+ 
+/* ------------------------------------------------------------------ */
+/* run_child – Milestone 4 version (kept to avoid breaking milestone4) */
+/*                                                                      */
+/* Called immediately after fork() returns 0.                          */
+/* path[]    – array of node indices computed by the parent            */
+/* path_len  – number of nodes in path                                 */
+/* weights[] – edge weights: weights[i] = weight of edge               */
+/*             path[i] → path[i+1]; length = path_len - 1             */
+/* ------------------------------------------------------------------ */
+void run_child(const int *path, int path_len, const int *weights)
+{
+    /* 1. Register signal handler BEFORE printing "started"
+          so we never miss a signal sent immediately after fork. */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handle_termination;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+ 
+    /* 2. Announce that this child is alive.
+          Format required by the spec: "[PID] started" */
+    printf("[%d] started\n", (int)getpid());
+    fflush(stdout);
+ 
+    /* 3. Simulate travel time.
+          For each edge path[i] → path[i+1]:
+            • W equal-length hops, each hop = 300 ms
+            • After arriving at an intermediate node, wait 1 full second
+          The child does NOT draw anything; the parent handles the GUI. */
+    for (int i = 0; i < path_len - 1 && !g_terminate; i++) {
+        int W = weights[i];
+ 
+        /* Travel across the edge: W hops × 300 ms each */
+        for (int hop = 0; hop < W && !g_terminate; hop++)
+            usleep(300 * 1000);
+ 
+        /* Wait 1 second at every intermediate node (skip destination) */
+        int is_destination = (i == path_len - 2);
+        if (!is_destination && !g_terminate)
+            usleep(1000 * 1000);
+    }
+ 
+    /* 4. Wait for SIGUSR1 from parent before exiting */
+    while (!g_terminate)
+        pause();
+ 
+    exit(EXIT_SUCCESS);
+}
+ 

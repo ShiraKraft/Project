@@ -1,50 +1,28 @@
-# ============================================================
-#  Makefile – OS Project (Milestones 1, 2, 3)
-# ============================================================
+# הגדרת הקומפיילר והדגלים
+CC = gcc
+CFLAGS = -Wall -Wextra -std=c11 -g
+LIBS = -lraylib -lGL -lX11 -lm -lpthread
 
-CC       = gcc
-CFLAGS   = -Wall -Wextra -std=c11 -g
-TFLAGS   = -Wall -Wextra -g
-LIBS     = -lm
+# קובצי המקור לסימולציה הגרפית בלבד (בלי tester.c!)
+SRCS = main.c child.c graph.c Dijkstra.c gui.c milestone5.c child_ipc.c parent_ipc.c gui_parent.c milestone4.c
+OBJS = $(SRCS:.c=.o)
 
-RAYLIB_FLAGS = -I. -L. \
-               -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+# יעד ברירת המחדל
+all: sim
 
-DIJKSTRA_SRC = main.c graph.c Dijkstra.c gui.c
-SIM_SRC      = main.c graph.c Dijkstra.c gui.c
-TESTER_SRC   = tester.c graph.c
-M4_SRC = main_m4.c milestone4.c child.c gui.c graph.c Dijkstra.c
+milestone4: sim
+milestone5: sim
 
-.PHONY: all milestone1 milestone2 milestone3 clean test
+# יצירת קובץ ההרצה - ודאי שיש כאן Tab בתחילת השורה
+sim: $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) -o sim $(LIBS)
 
-all: milestone1 milestone2 milestone3
+# חוק קימפול כללי - ודאי שיש כאן Tab בתחילת השורה
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-# Milestone 1 – terminal Dijkstra  (./dijkstra <file>)
-milestone1: $(DIJKSTRA_SRC) graph.h gui.h
-	$(CC) $(CFLAGS) -o dijkstra $(DIJKSTRA_SRC) $(LIBS) $(RAYLIB_FLAGS)
-	@echo "Built: dijkstra"
-
-# Milestone 2 – static GUI  (./sim <file>)
-milestone2: $(SIM_SRC) graph.h gui.h
-	$(CC) $(CFLAGS) -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
-	@echo "Built: sim (milestone 2)"
-
-# Milestone 3 – animated cyber GUI  (./sim <file>)
-# Same binary as milestone 2; animation activates via the Play button.
-milestone3: $(SIM_SRC) graph.h gui.h
-	$(CC) $(CFLAGS) -DSTEP_DELAY_MS=300 -DNODE_WAIT_MS=1000 -o sim $(SIM_SRC) $(LIBS) $(RAYLIB_FLAGS)
-	@echo "Built: sim (milestone 3 – animation enabled)"
-
-milestone4: $(M4_SRC) milestone4.h gui.h graph.h child.h
-	$(CC) $(CFLAGS) -o sim $(M4_SRC) $(LIBS) $(RAYLIB_FLAGS)
-
-tester: $(TESTER_SRC) graph.h
-	$(CC) $(TFLAGS) -o tester $(TESTER_SRC) $(LIBS)
-
-test: milestone1 tester
-	./tester ./dijkstra
-
+# ניקוי קבצים - ודאי שיש כאן Tab בתחילת השורה
 clean:
-	rm -f dijkstra sim tester
-	rm -f /tmp/os_test_*.txt
-	@echo "Cleaned."
+	rm -f sim *.o
+
+.PHONY: all clean milestone4 milestone5

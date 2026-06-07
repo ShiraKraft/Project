@@ -8,7 +8,8 @@
  * files needed.  The tester calls dijkstra() directly and also checks
  * the full output via stdout capture (popen).
  */
-
+#define _POSIX_C_SOURCE 200809L // נדרש עבור popen במצב c11
+#include <stdio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
