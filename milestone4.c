@@ -27,6 +27,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
+#include <fcntl.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Internal helpers
@@ -122,64 +124,76 @@ void OrchestrateChildProcesses(SimulationManager* sim)
         }
 
         /* ── fork() ──────────────────────────────────────────────────────── */
+        /* ── IPC PIPE CREATION ────────────────────────────────────────── */
+        /* Create a pipe for IPC communication between this child and parent */
+        int pipefd[2];
+        if (pipe(pipefd) == -1) {
+            perror("[parent] pipe");
+            t->is_active = false;
+            continue;
+        }
+
         pid_t pid = fork();
 
         if (pid < 0) {
             /* fork() failed – log and deactivate this traveler; keep going */
             perror("[parent] fork");
-            fprintf(stderr,
-                "[parent] traveler %d will not be simulated\n", i);
+            fprintf(stderr, "[parent] traveler %d will not be simulated\n", i);
+            close(pipefd[0]);
+            close(pipefd[1]);
             t->is_active = false;
             continue;
         }
 
         if (pid == 0) {
-            /* ── CHILD BRANCH ────────────────────────────────────────────── *
-             * We are now the child process.  The Traveler struct was copied   *
-             * by fork() so t->path / t->path_size are valid here.            *
-             * ExecuteChildLogic registers the signal handler, prints           *
-             * "[PID] started", then sleeps until SIGUSR1 arrives.             *
-             * It never returns.                                               */
+            /* ── CHILD BRANCH ────────────────────────────────────────────── */
+            /* Close the read end of the pipe since the child only writes */
+            close(pipefd[0]);
+
+            /* Duplicate the write end of the pipe to file descriptor 3 
+               so it matches write_fd = 3 in child.c */
+            if (dup2(pipefd[1], 3) == -1) {
+                perror("[child] dup2 failed");
+                exit(EXIT_FAILURE);
+            }
+            
+            /* Close the original write descriptor since it's now duplicated to 3 */
+            close(pipefd[1]);
+
+            /* Execute the child logic using the shared structs */
             ExecuteChildLogic(t);
             /* NOTREACHED */
             exit(EXIT_FAILURE);
         }
 
-        /* ── PARENT BRANCH ───────────────────────────────────────────────── *
-         * Record the child's PID and arm the traveler for animation.          */
+        /* ── PARENT BRANCH ───────────────────────────────────────────────── */
+        /* Close the write end of the pipe since the parent only reads */
+        close(pipefd[1]);
+
+        /* Store the read file descriptor in the traveler struct 
+           so the parent can read from it in the main loop later.
+           Note: Ensure you add 'int read_fd;' to your Traveler struct in graph.h/milestone4.h */
+        t->read_fd   = pipefd[0]; 
         t->pid       = pid;
         t->is_active = true;
 
-        printf("[parent] forked child PID %d for traveler %d "
-               "(src=%d -> dst=%d)\n",
-               (int)pid, i, t->src_node, t->dest_node);
-        fflush(stdout);
+        int flags = fcntl(t->read_fd, F_GETFL, 0);
+        fcntl(t->read_fd, F_SETFL, flags | O_NONBLOCK);
+
+        /* Milestone 5: Removed the old parent fork printf statement to comply with new spec */
     }
 }
-
+    
 /* ═══════════════════════════════════════════════════════════════════════════
  *  TerminateChildProcess
  * ═══════════════════════════════════════════════════════════════════════════ */
 void TerminateChildProcess(pid_t childPid)
 {
-    if (childPid <= 0) return;   /* never forked or already reaped */
-
-    /* Send SIGUSR1 – this wakes up the child's pause() loop and causes it
-     * to exit cleanly via exit(EXIT_SUCCESS) in run_child() (child.c).
-     * SIGUSR1 is preferred over SIGKILL because it allows the child to
-     * run any atexit() handlers and flush stdio buffers.                  */
-    if (kill(childPid, SIGUSR1) == -1) {
-        /* ESRCH means the process no longer exists – not an error */
-        if (errno != ESRCH) {
-            perror("[parent] kill(SIGUSR1)");
-        }
-    } else {
-        printf("[parent] sent SIGUSR1 to child PID %d (journey complete)\n",
-               (int)childPid);
-        fflush(stdout);
-    }
+    /* Milestone 5: Children terminate autonomously. 
+       Disabled standard SIGUSR1 signaling to keep the terminal output clean. */
+    (void)childPid;
+    return;
 }
-
 /* ═══════════════════════════════════════════════════════════════════════════
  *  WaitForAllChildren
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -196,8 +210,8 @@ void WaitForAllChildren(SimulationManager* sim)
         /* If the child is still marked active (window was closed early,
          * not all journeys finished), terminate it first so waitpid()
          * does not block indefinitely.                                   */
-        if (t->is_active) {
-            TerminateChildProcess(t->pid);
+       if (t->is_active) {
+            kill(t->pid, SIGKILL); /* Force kill if window closed early */
             t->is_active = false;
         }
 
@@ -220,7 +234,10 @@ void WaitForAllChildren(SimulationManager* sim)
             }
             fflush(stdout);
         }
-
+    if (t->read_fd > 0) {
+            close(t->read_fd);
+            t->read_fd = -1;
+        }
         t->pid = 0;   /* mark as reaped to prevent double-wait */
     }
 }
@@ -430,6 +447,26 @@ void ManagementGuiLoop(SimulationManager* sim,
         /* 1. Compute delta time (frame-rate-independent animation) */
         float dt = GetFrameTime();
 
+        /* ── Milestone 5: Read Autonomous Child Updates via IPC ────────── */
+        for (int i = 0; i < sim->traveler_count; i++) {
+            Traveler* t = &sim->travelers[i];
+            if (!t->is_active || t->read_fd <= 0) continue;
+
+            IPC_Message msg;
+            // Read all available messages in the pipe (non-blocking)
+            while (read(t->read_fd, &msg, sizeof(IPC_Message)) > 0) {
+                if (msg.is_finished) {
+                    /* Process fully completed its journey */
+                    printf("[PID=%d] finished\n", (int)msg.child_pid);
+                    fflush(stdout);
+                } else {
+                    /* Process arrived at a specific node */
+                    printf("[PID=%d] arrived at node %d | next node: %d\n",
+                           (int)msg.child_pid, msg.current_node, msg.next_node);
+                    fflush(stdout);
+                }
+            }
+        }
         /* 2. Update all traveler positions */
         UpdateAllTravelersAnimation(sim, g, nodes, dt);
 

@@ -7,7 +7,7 @@
  * The parent process owns the rendering loop and controls all child
  * process lifecycles. Each child "lives" for the duration of its journey
  * and is terminated via SIGUSR1 the moment the parent detects arrival.
- */
+ */                  
 
 #ifndef MILESTONE4_H
 #define MILESTONE4_H
@@ -30,6 +30,14 @@
 #define M4_NODE_WAIT_TIME  1.0f   /* seconds to pause at intermediate nodes  */
 #define M4_ENTITY_RADIUS   14.0f  /* visual radius of the traveler circle    */
 
+typedef struct {
+    pid_t child_pid;
+    int current_node;
+    int next_node;
+    int is_destination;
+    int is_finished;
+} IPC_Message;
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Traveler
  *  Represents one traveler / child-process pair managed by the parent.
@@ -37,7 +45,7 @@
 typedef struct {
     /* ── Process identity ───────────────────────────────────────────────── */
     pid_t pid;              /* PID assigned after a successful fork()        */
-
+int read_fd;
     /* ── Journey definition ─────────────────────────────────────────────── */
     int src_node;           /* source node index (from input file)           */
     int dest_node;          /* destination node index (from input file)      */
