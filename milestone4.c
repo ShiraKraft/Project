@@ -1,34 +1,17 @@
-/*
- * milestone4.c  –  Milestone 4: Parent Process Architect & GUI Manager
- *
- * Implements all process-control and GUI functions declared in milestone4.h.
- *
- * Concurrency model
- * ─────────────────
- * The parent forks one child per traveler inside OrchestrateChildProcesses().
- * After that the parent re-enters C code (ManagementGuiLoop) and never blocks
- * waiting for a child — it renders at 60 FPS and signals children exactly when
- * their on-screen journey is finished.  Children run concurrently, sleeping in
- * run_child() (child.c) until they receive SIGUSR1.
- *
- * All waitpid() calls are deferred to WaitForAllChildren(), invoked once after
- * the Raylib window closes, to collect exit statuses and avoid zombie entries
- * in the process table.
- */
-
-#include "milestone4.h"
-#include "child.h"      /* run_child() – the child-process entry point       */
+#define _DEFAULT_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <signal.h>
-#include <sys/wait.h>
 #include <unistd.h>
-#include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <sys/wait.h>
+
+#include "milestone4.h"
+#include "child.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Internal helpers

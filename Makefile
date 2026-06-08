@@ -38,10 +38,7 @@ milestone3: $(SIM_SRC) graph.h gui.h
 
 milestone4: $(M4_SRC) milestone4.h gui.h graph.h child.h
 	$(CC) $(CFLAGS) -o sim $(M4_SRC) $(LIBS) $(RAYLIB_FLAGS)
-
-	milestone5:
-		$(CC) $(CFLAGS) -o sim $(M4_SRC) $(LIBS) $(RAYLIB_FLAGS)
-		@echo "Built: sim (milestone 5 - IPC)"
+	@echo "Built: sim (milestone 4/5 - Sync & IPC)"
 
 tester: $(TESTER_SRC) graph.h
 	$(CC) $(TFLAGS) -o tester $(TESTER_SRC) $(LIBS)

@@ -37,7 +37,6 @@ typedef struct {
     int is_destination;
     int is_finished;
 } IPC_Message;
-
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Traveler
  *  Represents one traveler / child-process pair managed by the parent.

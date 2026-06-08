@@ -1,8 +1,7 @@
-#define _XOPEN_SOURCE 700
-#include "child.h"
+#define _DEFAULT_SOURCE
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <signal.h>
 #include <string.h>
 
