@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <semaphore.h>
+#include <fcntl.h> 
 
 /* ------------------------------------------------------------------ */
 /* IPC Message Structure Definition                                   */
@@ -21,7 +23,7 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 void run_child(const int *path, int path_len, const int *weights)
 {
-    /* * In milestone 5, children write to the IPC channel.
+    /* In milestone 5, children write to the IPC channel.
      * We assume write_fd = 3 is the dedicated pipe descriptor passed 
      * by the parent, or managed via dup2/stdout redirect.
      */
@@ -43,11 +45,28 @@ void run_child(const int *path, int path_len, const int *weights)
             msg.is_destination = 0;
         }
 
+        // ==========================================================
+        // SYNCHRONIZATION: Access and lock the unique node semaphore
+        // ==========================================================
+        char sem_name[32];
+        sprintf(sem_name, "/node_sem_%d", msg.current_node);
+        
+        /* Open or connect to the named semaphore for the current node (initially 1) */
+        sem_t *node_sem = sem_open(sem_name, O_CREAT, 0666, 1);
+        
+        /* Block and wait here if another passenger process currently occupies this node */
+        sem_wait(node_sem); 
+        // ==========================================================
+
         /* Send current location update to parent via IPC pipe */
+        /* Only executed AFTER successfully acquiring the node lock */
         write(write_fd, &msg, sizeof(IPC_Message));
 
         /* If destination reached, terminate the travel loop */
         if (msg.is_destination) {
+            /* Release the node semaphore before exiting the loop */
+            sem_post(node_sem);
+            sem_close(node_sem);
             break;
         }
 
@@ -59,6 +78,15 @@ void run_child(const int *path, int path_len, const int *weights)
 
         /* Intermediate node wait time (1 second) */
         usleep(1000 * 1000); /* 1s */
+
+        // ==========================================================
+        // SYNCHRONIZATION: Departure from node - release the lock
+        // ==========================================================
+        /* Unlock the semaphore to allow the next waiting passenger to enter */
+        sem_post(node_sem);  
+        /* Close the local descriptor link to this named semaphore */
+        sem_close(node_sem); 
+        // ==========================================================
     }
 
     /* 2. Send final completion message to parent */
