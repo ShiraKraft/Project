@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <math.h>
+#include <semaphore.h>
+#include <fcntl.h>
 
 #include "graph.h"
 #include "gui.h"
@@ -30,14 +32,14 @@ static bool is_skip_line(const char *line)
  * parse_input_file_m5
  *
  * Reads the input file and extracts:
- *   - the graph (Graph*)
- *   - the traveler list (src and dst only – no path!)
+ * - the graph (Graph*)
+ * - the traveler list (src and dst only – no path!)
  *
  * Milestone 5: the parent does not compute paths. path_size stays 0.
  * ════════════════════════════════════════════════════════════════════ */
 static bool parse_input_file_m5(const char *filename,
-                                  Graph **g_out,
-                                  SimulationManager *sim)
+                                 Graph **g_out,
+                                 SimulationManager *sim)
 {
     FILE *fp = fopen(filename, "r");
     if (!fp) { perror(filename); return false; }
@@ -116,8 +118,8 @@ static bool parse_input_file_m5(const char *filename,
  * Called every frame of the render loop.
  * ════════════════════════════════════════════════════════════════════ */
 static void process_ipc_messages(SimulationManager *sim,
-                                  const NodeVisual *nodes,
-                                  int num_travelers)
+                                 const NodeVisual *nodes,
+                                 int num_travelers)
 {
     for (int i = 0; i < num_travelers; i++) {
         Traveler *t = &sim->travelers[i];
@@ -175,13 +177,12 @@ static bool all_done(const SimulationManager *sim)
  * run_milestone5
  *
  * Main simulation function for Milestone 5:
- *   1. Initialise pipes
- *   2. Fork one child per traveler – child calls run_child_m5
- *   3. Parent runs GUI loop reading IPC messages
- *   4. waitpid for all children
+ * 1. Initialise pipes
+ * 2. Fork one child per traveler – child calls run_child_m5
+ * 3. Parent runs GUI loop reading IPC messages
+ * 4. waitpid for all children
  * ════════════════════════════════════════════════════════════════════ */
  void run_milestone5(SimulationManager *sim, Graph *g, const NodeVisual *nodes, const char *filename)
-                        
 {
     int n = sim->traveler_count;
 
@@ -215,6 +216,9 @@ static bool all_done(const SimulationManager *sim)
 
         if (pid == 0) {
             /* ── CHILD: computes path and sends IPC messages ─────── */
+            // Initialize named semaphore for synchronization before the child starts
+            sem_t *sem = sem_open("/node_lock", O_CREAT, 0644, 1);
+            
             run_child_m5(t->src_node, t->dest_node,
                          filename, i, n);
             /* run_child_m5 never returns */
@@ -290,34 +294,17 @@ static bool all_done(const SimulationManager *sim)
 
     cleanup_ipc_infrastructure();
 }
-/* ------------------------------------------------------------------ */
-/* Global flag – set by the signal handler, checked in the travel loop */
-/* ------------------------------------------------------------------ */
+
 static volatile sig_atomic_t g_terminate = 0;
  
-/* ------------------------------------------------------------------ */
-/* Signal handler                                                       */
-/* The parent sends SIGUSR1 when the traveler's journey is complete.   */
-/* ------------------------------------------------------------------ */
 static void handle_termination(int sig)
 {
     (void)sig;
     g_terminate = 1;
 }
- 
-/* ------------------------------------------------------------------ */
-/* run_child – Milestone 4 version (kept to avoid breaking milestone4) */
-/*                                                                      */
-/* Called immediately after fork() returns 0.                          */
-/* path[]    – array of node indices computed by the parent            */
-/* path_len  – number of nodes in path                                 */
-/* weights[] – edge weights: weights[i] = weight of edge               */
-/*             path[i] → path[i+1]; length = path_len - 1             */
-/* ------------------------------------------------------------------ */
+
 void run_child(const int *path, int path_len, const int *weights)
 {
-    /* 1. Register signal handler BEFORE printing "started"
-          so we never miss a signal sent immediately after fork. */
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_termination;
@@ -328,19 +315,22 @@ void run_child(const int *path, int path_len, const int *weights)
         exit(EXIT_FAILURE);
     }
  
-    /* 2. Announce that this child is alive.
-          Format required by the spec: "[PID] started" */
+    // Open the semaphore
+    sem_t *sem = sem_open("/node_lock", O_CREAT, 0644, 1);
+    if (sem == SEM_FAILED) {
+        perror("sem_open");
+        exit(EXIT_FAILURE);
+    }
+
     printf("[%d] started\n", (int)getpid());
     fflush(stdout);
  
-    /* 3. Simulate travel time.
-          For each edge path[i] → path[i+1]:
-            • W equal-length hops, each hop = 300 ms
-            • After arriving at an intermediate node, wait 1 full second
-          The child does NOT draw anything; the parent handles the GUI. */
     for (int i = 0; i < path_len - 1 && !g_terminate; i++) {
         int W = weights[i];
- 
+        
+        // Critical Section
+        sem_wait(sem);
+
         /* Travel across the edge: W hops × 300 ms each */
         for (int hop = 0; hop < W && !g_terminate; hop++)
             usleep(300 * 1000);
@@ -349,12 +339,14 @@ void run_child(const int *path, int path_len, const int *weights)
         int is_destination = (i == path_len - 2);
         if (!is_destination && !g_terminate)
             usleep(1000 * 1000);
+            
+        sem_post(sem);
+        // End Critical Section
     }
  
-    /* 4. Wait for SIGUSR1 from parent before exiting */
     while (!g_terminate)
         pause();
- 
+        
+    sem_close(sem);
     exit(EXIT_SUCCESS);
 }
- 
