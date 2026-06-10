@@ -1,49 +1,79 @@
 /*
- * milestone5.c  –  Milestone 6: Autonomous Child Process Logic (Updated)
+ * milestone5.c – Milestone 6: Autonomous Child Process with Node Synchronisation
  *
- * Changes from Milestone 5:
- *   Uses send_status_m6() instead of send_status_to_parent() so that
- *   every message carries the correct sync_state and target_node fields.
- *
- *   Synchronisation flow for every non-source node:
- *     1. send SYNC_WAITING  – traveler is queued outside the node
- *     2. sem_wait(sem)      – block until the node is free
- *     3. send SYNC_INSIDE   – traveler entered the node
- *     4. usleep(1 s)        – mandatory dwell time (critical section)
- *     5. sem_post(sem)      – release the lock
- *
- *   While crossing an edge:
- *     send SYNC_MOVING      – traveler is moving, holds no lock
+ * Each child process:
+ * 1. Reads the graph file independently and runs Dijkstra to find its path.
+ * 2. Travels hop-by-hop (300 ms per hop unit).
+ * 3. Before entering each intermediate or destination node, it acquires a 
+ * per-node POSIX named semaphore ("/os_sim_node_<index>") – the critical section.
+ * 4. Stays inside the node for exactly 1 second, then releases the semaphore.
+ * 5. Reports state transitions using send_status_m6() so that every message 
+ * carries the correct sync_state and target_node fields.
  */
 
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 
 #include "milestone5.h"
-#include "child_ipc.h"       /* send_status_m6, init_child_ipc_side */
-#include "ipc_protocol.h"    /* SyncState */
-#include "graph.h"
-#include <semaphore.h>
-#include <fcntl.h>
+#include "child_ipc.h"       /* send_status_m6, init_child_ipc_side, close_child_ipc_side */
+#include "ipc_protocol.h"    /* SyncState constants (SYNC_WAITING, SYNC_INSIDE, SYNC_MOVING) */
+#include "graph.h"           /* CompactGraph, init_graph, add_edge */
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <semaphore.h>
+#include <fcntl.h>           /* O_CREAT */
+#include <sys/stat.h>        /* Mode bits for sem_open */
 
 /* ── Timing constants ───────────────────────────────────────────── */
 #define HOP_DELAY_US   (300 * 1000)    /* 300 ms per edge hop        */
 #define NODE_WAIT_US  (1000 * 1000)    /* 1 s dwell at each node     */
-#define SEM_NAME       "/node_lock"
+
+/* ── Helpers for Per-Node Semaphores ────────────────────────────── */
+
+/* Build a unique semaphore name for a specific node index */
+static void sem_name_for_node(int node, char *buf, size_t buf_size)
+{
+    snprintf(buf, buf_size, "/os_sim_node_%d", node);
+}
+
+/* Open or create a unique semaphore for a specific node */
+static sem_t *open_node_sem(int node)
+{
+    char name[64];
+    sem_name_for_node(node, name, sizeof(name));
+
+    /* Open with O_CREAT so multiple children can safely attach to the same node semaphore */
+    sem_t *s = sem_open(name, O_CREAT, 0644, 1);
+    if (s == SEM_FAILED) {
+        perror("[child_m6] sem_open");
+        exit(EXIT_FAILURE);
+    }
+    return s;
+}
+
+/* Close the local semaphore handle */
+static void close_node_sem(sem_t *s)
+{
+    if (sem_close(s) == -1)
+        perror("[child_m6] sem_close");
+}
 
 /* ── Helper: look up the weight of edge u→v ─────────────────────── */
 static int edge_weight(const CompactGraph *g, int u, int v)
 {
-    for (int e = g->head[u]; e != -1; e = g->edges[e].next)
+    for (int e = g->head[u]; e != -1; e = g->edges[e].next) {
         if (g->edges[e].dest == v)
             return g->edges[e].weight;
+    }
     return 1; /* safety fallback */
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  run_child_m5
+ * run_child_m5
  * ════════════════════════════════════════════════════════════════════ */
 void run_child_m5(int src, int dst,
                   const char *filename,
@@ -51,11 +81,11 @@ void run_child_m5(int src, int dst,
 {
     (void)total_children;
 
-    /* ── Initialise IPC ─────────────────────────────────────────── */
+    /* ── 1. Initialise IPC ─────────────────────────────────────────── */
     if (init_child_ipc_side(child_index) != 0)
         exit(EXIT_FAILURE);
 
-    /* ── Read graph from file ───────────────────────────────────── */
+    /* ── 2. Read graph from file independently ──────────────────────── */
     FILE *f = fopen(filename, "r");
     if (!f) {
         perror("[child] fopen");
@@ -66,50 +96,36 @@ void run_child_m5(int src, int dst,
     CompactGraph g;
     int N, M;
     if (fscanf(f, "%d %d", &N, &M) != 2) {
-        fclose(f); close_child_ipc_side(); exit(EXIT_FAILURE);
+        fclose(f); 
+        close_child_ipc_side(); 
+        exit(EXIT_FAILURE);
     }
     init_graph(&g, N);
 
     for (int i = 0; i < M; i++) {
         int u, v, w;
         if (fscanf(f, "%d %d %d", &u, &v, &w) != 3) {
-            fclose(f); close_child_ipc_side(); exit(EXIT_FAILURE);
+            fclose(f); 
+            close_child_ipc_side(); 
+            exit(EXIT_FAILURE);
         }
         add_edge(&g, u, v, w);
     }
     fclose(f);
 
-    /* ── Run Dijkstra ───────────────────────────────────────────── */
+    /* ── 3. Run Dijkstra ───────────────────────────────────────────── */
     PathResult result = run_dijkstra(&g, src, dst);
 
     if (!result.found) {
-        /* No path exists: notify parent and exit */
+        /* No path exists: notify parent and exit safely */
         send_status_m6(src, -1, true, false, SYNC_MOVING, src);
         send_status_m6(src, -1, true, true,  SYNC_MOVING, src);
         close_child_ipc_side();
         exit(EXIT_SUCCESS);
     }
 
-    /* ── Open named semaphore ───────────────────────────────────── */
-    sem_t *sem = sem_open(SEM_NAME, O_CREAT, 0644, 1);
-    if (sem == SEM_FAILED) {
-        perror("[child] sem_open");
-        close_child_ipc_side();
-        exit(EXIT_FAILURE);
-    }
-
     /* ════════════════════════════════════════════════════════════
-     *  Travel loop
-     *
-     *  result.path[0]               = src  (starting node)
-     *  result.path[result.length-1] = dst  (destination node)
-     *
-     *  For each node i in the path:
-     *    i == 0   : source – just send MOVING and cross the first edge
-     *    0 < i < last : intermediate – WAITING → lock → INSIDE →
-     *                   dwell → unlock → MOVING → cross edge
-     *    i == last: destination – WAITING → lock → INSIDE →
-     *               dwell → unlock
+     * Travel loop
      * ════════════════════════════════════════════════════════════ */
     for (int i = 0; i < result.length; i++) {
         int  cur    = result.path[i];
@@ -118,9 +134,8 @@ void run_child_m5(int src, int dst,
 
         if (i == 0) {
             /*
-             * Source node: no lock needed (traveler starts here).
-             * Notify parent we are moving toward the next node,
-             * then cross the first edge.
+             * Source node: No lock needed to start.
+             * Notify parent we are moving toward the next node, then cross edge.
              */
             send_status_m6(cur, nxt, false, false, SYNC_MOVING, nxt);
 
@@ -131,19 +146,32 @@ void run_child_m5(int src, int dst,
         } else if (!is_dst) {
             /*
              * Intermediate node:
-             *   1. Notify WAITING – queued outside the node
-             *   2. Acquire lock   – blocks if node is occupied
-             *   3. Notify INSIDE  – entered the node
-             *   4. Dwell 1 second – critical section
-             *   5. Release lock
-             *   6. Notify MOVING  – leaving toward next node
-             *   7. Cross the edge
+             * 1. Notify WAITING – queued outside this specific node
+             * 2. Acquire per-node lock – blocks if another process is inside
+             * 3. Notify INSIDE  – entered the node
+             * 4. Dwell 1 second – critical section
+             * 5. Release per-node lock
+             * 6. Notify MOVING  – leaving toward next node
+             * 7. Cross the edge
              */
             send_status_m6(cur, nxt, false, false, SYNC_WAITING, cur);  /* 1 */
-            sem_wait(sem);                                               /* 2 */
+            
+            sem_t *node_sem = open_node_sem(cur);
+            while (sem_wait(node_sem) == -1) {
+                if (errno != EINTR) {
+                    perror("[child_m6] sem_wait");
+                    close_node_sem(node_sem);
+                    close_child_ipc_side();
+                    exit(EXIT_FAILURE);
+                }
+            }                                                           /* 2 */
+
             send_status_m6(cur, nxt, false, false, SYNC_INSIDE, cur);   /* 3 */
-            usleep(NODE_WAIT_US);                                        /* 4 */
-            sem_post(sem);                                               /* 5 */
+            usleep(NODE_WAIT_US);                                       /* 4 */
+            
+            sem_post(node_sem);                                         /* 5 */
+            close_node_sem(node_sem);
+
             send_status_m6(cur, nxt, false, false, SYNC_MOVING, nxt);   /* 6 */
 
             int w = edge_weight(&g, cur, nxt);                          /* 7 */
@@ -153,23 +181,35 @@ void run_child_m5(int src, int dst,
         } else {
             /*
              * Destination node:
-             *   1. Notify WAITING
-             *   2. Acquire lock
-             *   3. Notify INSIDE (is_destination = true)
-             *   4. Dwell 1 second
-             *   5. Release lock
+             * 1. Notify WAITING
+             * 2. Acquire per-node lock
+             * 3. Notify INSIDE (is_destination = true)
+             * 4. Dwell 1 second
+             * 5. Release per-node lock
              */
             send_status_m6(cur, -1, true, false, SYNC_WAITING, cur);   /* 1 */
-            sem_wait(sem);                                              /* 2 */
+            
+            sem_t *node_sem = open_node_sem(cur);
+            while (sem_wait(node_sem) == -1) {
+                if (errno != EINTR) {
+                    perror("[child_m6] sem_wait");
+                    close_node_sem(node_sem);
+                    close_child_ipc_side();
+                    exit(EXIT_FAILURE);
+                }
+            }                                                          /* 2 */
+
             send_status_m6(cur, -1, true, false, SYNC_INSIDE, cur);    /* 3 */
-            usleep(NODE_WAIT_US);                                       /* 4 */
-            sem_post(sem);                                              /* 5 */
+            usleep(NODE_WAIT_US);                                      /* 4 */
+            
+            sem_post(node_sem);                                        /* 5 */
+            close_node_sem(node_sem);
         }
     }
 
-    /* ── Close semaphore and send finished message ──────────────── */
-    sem_close(sem);
+    /* ── 4. Journey complete: send finished message ──────────────── */
     send_status_m6(-1, -1, false, true, SYNC_MOVING, -1);
     close_child_ipc_side();
+    
     exit(EXIT_SUCCESS);
 }
