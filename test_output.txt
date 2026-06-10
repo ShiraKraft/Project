@@ -1,0 +1,76 @@
+[parent] graph loaded: 6 nodes, 4 travelers
+INFO: Initializing raylib 4.5
+INFO: Supported raylib modules:
+INFO:     > rcore:..... loaded (mandatory)
+INFO:     > rlgl:...... loaded (mandatory)
+INFO:     > rshapes:... loaded (optional)
+INFO:     > rtextures:. loaded (optional)
+INFO:     > rtext:..... loaded (optional)
+INFO:     > rmodels:... loaded (optional)
+INFO:     > raudio:.... loaded (optional)
+INFO: DISPLAY: Trying to enable MSAA x4
+INFO: DISPLAY: Device initialized successfully
+INFO:     > Display size: 1665 x 851
+INFO:     > Screen size:  1200 x 800
+INFO:     > Render size:  1200 x 800
+INFO:     > Viewport offsets: 0, 0
+INFO: GLAD: OpenGL extensions loaded successfully
+INFO: GL: Supported extensions count: 172
+INFO: GL: OpenGL device information:
+INFO:     > Vendor:   VMware, Inc.
+INFO:     > Renderer: SVGA3D; build: RELEASE;  LLVM;
+INFO:     > Version:  4.3 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.1
+INFO:     > GLSL:     4.30
+INFO: GL: VAO extension detected, VAO functions loaded successfully
+INFO: GL: NPOT textures extension detected, full NPOT textures supported
+INFO: GL: DXT compressed textures supported
+INFO: GL: ETC2/EAC compressed textures supported
+INFO: TEXTURE: [ID 1] Texture loaded successfully (1x1 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 1] Default texture loaded successfully
+INFO: SHADER: [ID 1] Vertex shader compiled successfully
+INFO: SHADER: [ID 2] Fragment shader compiled successfully
+INFO: SHADER: [ID 3] Program shader loaded successfully
+INFO: SHADER: [ID 3] Default shader loaded successfully
+INFO: RLGL: Render batch vertex buffers loaded successfully in RAM (CPU)
+INFO: RLGL: Render batch vertex buffers loaded successfully in VRAM (GPU)
+INFO: RLGL: Default OpenGL state initialized successfully
+INFO: TEXTURE: [ID 2] Texture loaded successfully (128x128 | GRAY_ALPHA | 1 mipmaps)
+INFO: FONT: Default font loaded successfully (224 glyphs)
+INFO: TIMER: Target time per frame: 16.667 milliseconds
+[PID=32775] arrived at node 0 | next node: 2
+[PID=32776] arrived at node 0 | next node: 2
+[PID=32777] arrived at node 0 | next node: 2
+[PID=32778] arrived at node 0 | next node: 2
+[PID=32775] arrived at node 2 | next node: 1
+[PID=32776] arrived at node 2 | next node: 1
+[PID=32777] arrived at node 2 | next node: 1
+[PID=32778] arrived at node 2 | next node: 1
+[PID=32775] arrived at node 1 | next node: 3
+[PID=32776] arrived at node 1 | next node: 3
+[PID=32777] arrived at node 1 | next node: 3
+[PID=32778] arrived at node 1 | next node: 3
+[PID=32775] arrived at node 3 | next node: 4
+[PID=32776] arrived at node 3 | next node: 4
+[PID=32777] arrived at node 3 | next node: 4
+[PID=32778] arrived at node 3 | next node: 4
+[PID=32775] arrived at node 4 | next node: 5
+[PID=32776] arrived at node 4 | next node: 5
+[PID=32777] arrived at node 4 | next node: 5
+[PID=32778] arrived at node 4 | next node: 5
+[PID=32775] arrived at node 5 | next node: -1
+[PID=32775] finished
+[PID=32776] arrived at node 5 | next node: -1
+[PID=32776] finished
+[PID=32777] arrived at node 5 | next node: -1
+[PID=32777] finished
+[PID=32778] arrived at node 5 | next node: -1
+[PID=32778] finished
+[parent] child PID 32775 exited with status 0
+[parent] child PID 32776 exited with status 0
+[parent] child PID 32777 exited with status 0
+[parent] child PID 32778 exited with status 0
+INFO: TEXTURE: [ID 2] Unloaded texture data from VRAM (GPU)
+INFO: SHADER: [ID 3] Default shader unloaded successfully
+INFO: TEXTURE: [ID 1] Default texture unloaded successfully
+INFO: Window closed successfully
+[parent] simulation complete – all children reaped
