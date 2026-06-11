@@ -21,8 +21,8 @@ M5_SRC = main_m5.c milestone5.c \
          graph.c Dijkstra.c \
          parent_ipc.c child_ipc.c \
          gui_parent.c signal_handler.c
- 
-M6_SRC = main_m5.c milestone5.c \
+		 
+ M6_SRC = main_m5.c milestone5.c logger.c \
          graph.c Dijkstra.c \
          parent_ipc.c child_ipc.c \
          gui_parent.c signal_handler.c

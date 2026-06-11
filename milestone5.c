@@ -19,6 +19,7 @@
 #include "ipc_protocol.h"    /* SyncState constants (SYNC_WAITING, SYNC_INSIDE, SYNC_MOVING) */
 #include "graph.h"           /* CompactGraph, init_graph, add_edge */
 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,12 @@
 #include <semaphore.h>
 #include <fcntl.h>           /* O_CREAT */
 #include <sys/stat.h>        /* Mode bits for sem_open */
+
+
+double get_timestamp(void);
+void log_node_entry(int traveler_id, int node_id, double timestamp);
+void log_node_exit(int traveler_id, int node_id, double timestamp);
+
 
 /* ── Timing constants ───────────────────────────────────────────── */
 #define HOP_DELAY_US   (300 * 1000)    /* 300 ms per edge hop        */
@@ -166,10 +173,13 @@ void run_child_m5(int src, int dst,
                 }
             }                                                           /* 2 */
 
+            log_node_entry(child_index, cur, get_timestamp());
+            
             send_status_m6(cur, nxt, false, false, SYNC_INSIDE, cur);   /* 3 */
             usleep(NODE_WAIT_US);                                       /* 4 */
             
             sem_post(node_sem);                                         /* 5 */
+            log_node_exit(child_index, cur, get_timestamp());
             close_node_sem(node_sem);
 
             send_status_m6(cur, nxt, false, false, SYNC_MOVING, nxt);   /* 6 */
@@ -203,6 +213,7 @@ void run_child_m5(int src, int dst,
             usleep(NODE_WAIT_US);                                      /* 4 */
             
             sem_post(node_sem);                                        /* 5 */
+            log_node_exit(child_index, cur, get_timestamp());
             close_node_sem(node_sem);
         }
     }

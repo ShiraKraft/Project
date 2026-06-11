@@ -1,21 +1,25 @@
 /*
- * tester.c  –  Self-contained test suite for OS Project Milestone 1
+ * tester.c  -  OS Project Test Suite
+ *              Milestone 1: Dijkstra correctness tests (T1-T12)
+ *              Milestone 6: Lock-integrity validation hooks
  *
- * Compile:  gcc -o tester tester.c graph.c -lm
- * Run:      ./tester
+ * Compile (Milestone 1 tests only):
+ *   gcc -o tester tester.c graph.c -lm
+ *   ./tester ./dijkstra
  *
- * All input graphs are written to temp files at runtime – no external
- * files needed.  The tester calls dijkstra() directly and also checks
- * the full output via stdout capture (popen).
+ * Compile (with Milestone 6 lock hooks enabled):
+ *   gcc -o tester tester.c graph.c -lm -lrt
+ *
+ * Or simply:
+ *   make test
  */
-#define _POSIX_C_SOURCE 200809L // נדרש עבור popen במצב c11
-#include <stdio.h>
+
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "graph.h"   /* Node, Graph, Query, createNode, initGraph,
-                        addEdge, parseGraphFromFile, dijkstra,
-                        displayResults, freeGraph                  */
+#include <time.h>
+#include "graph.h"
 
 /* ═══════════════════════════════════════════════════════════════════
  *  Colour helpers
@@ -25,8 +29,9 @@
 #define YELLOW "\033[1;33m"
 #define CYAN   "\033[0;36m"
 #define RESET  "\033[0m"
-#define _POSIX_C_SOURCE 200809L   // allowing popen / pclose
-#include <sys/wait.h>             // defines WEXITSTATUS
+
+#include <sys/wait.h>
+
 /* ═══════════════════════════════════════════════════════════════════
  *  Global counters
  * ═══════════════════════════════════════════════════════════════════ */
@@ -35,7 +40,7 @@ static int g_fail  = 0;
 static int g_total = 0;
 
 /* ═══════════════════════════════════════════════════════════════════
- *  write_tmp_file  –  dump a C-string to a temp file, return path
+ *  write_tmp_file  -  dump a C-string to a temp file, return path
  * ═══════════════════════════════════════════════════════════════════ */
 static const char *write_tmp_file(const char *name, const char *content)
 {
@@ -49,13 +54,12 @@ static const char *write_tmp_file(const char *name, const char *content)
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *  capture_stdout  –  run "./Project <file>", return stdout as string
+ *  capture_stdout  -  run "./Project <file>", return stdout as string
  *  (caller must free the returned buffer)
  * ═══════════════════════════════════════════════════════════════════ */
 static char *capture_stdout(const char *exe, const char *input_file)
 {
     char cmd[512];
-    /* redirect stderr to /dev/null so only stdout is captured */
     snprintf(cmd, sizeof(cmd), "%s \"%s\" 2>/dev/null", exe, input_file);
 
     FILE *fp = popen(cmd, "r");
@@ -76,7 +80,7 @@ static char *capture_stdout(const char *exe, const char *input_file)
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *  trim_trailing  –  remove trailing whitespace / newlines in-place
+ *  trim_trailing  -  remove trailing whitespace / newlines in-place
  * ═══════════════════════════════════════════════════════════════════ */
 static void trim_trailing(char *s)
 {
@@ -86,7 +90,7 @@ static void trim_trailing(char *s)
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *  check  –  compare actual vs expected, print result
+ *  check  -  compare actual vs expected, print result
  * ═══════════════════════════════════════════════════════════════════ */
 static void check(const char *test_name,
                   const char *actual,
@@ -111,7 +115,7 @@ static void check(const char *test_name,
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *  check_error  –  verify program exits with non-zero code
+ *  check_error  -  verify program exits with non-zero code
  * ═══════════════════════════════════════════════════════════════════ */
 static void check_error(const char *test_name,
                          const char *exe,
@@ -127,21 +131,16 @@ static void check_error(const char *test_name,
         printf(GREEN "  [PASS]" RESET " %s  (exit=%d)\n", test_name, exit_code);
         g_pass++;
     } else {
-        printf(RED   "  [FAIL]" RESET " %s  – expected non-zero exit, got 0\n",
+        printf(RED   "  [FAIL]" RESET " %s  - expected non-zero exit, got 0\n",
                test_name);
         g_fail++;
     }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *  THE TESTS
+ *  MILESTONE 1 TESTS  (T1 - T12)
  * ═══════════════════════════════════════════════════════════════════ */
 
-/*
- * T1 – Assignment example
- * Graph from the spec; expected shortest path 0→5 = weight 12
- * Route: 0 -> 2 -> 1 -> 3 -> 4 -> 5
- */
 static void test_assignment_example(const char *exe)
 {
     const char *graph =
@@ -158,32 +157,15 @@ static void test_assignment_example(const char *exe)
 
     const char *path = write_tmp_file("t1", graph);
     char *out = capture_stdout(exe, path);
-    /* Accepted outputs: the spec shows "0 -> 2 -> 5\n12"
-       but the actual shortest via adjacency is 0->2->1->3->4->5 = 12.
-       We test the weight line only, since path depends on edge ordering. */
-    /* Find last line (weight) */
-    char last[64] = "";
-    char *nl = strrchr(out, '\n');
-    if (nl && nl != out) {
-        /* walk back past the trailing newline */
-        *nl = '\0';
-        char *prev = strrchr(out, '\n');
-        strncpy(last, prev ? prev+1 : out, sizeof(last)-1);
-        *nl = '\n';
-    } else {
-        strncpy(last, out, sizeof(last)-1);
-    }
-    trim_trailing(last);
     trim_trailing(out);
 
-    /* Check that output contains "12" as weight */
     if (strstr(out, "12") != NULL && strstr(out, "->") != NULL) {
         g_total++;
-        printf(GREEN "  [PASS]" RESET " T1 – Assignment example (weight=12, path printed)\n");
+        printf(GREEN "  [PASS]" RESET " T1 - Assignment example (weight=12, path printed)\n");
         g_pass++;
     } else {
         g_total++;
-        printf(RED "  [FAIL]" RESET " T1 – Assignment example\n");
+        printf(RED "  [FAIL]" RESET " T1 - Assignment example\n");
         printf("         Expected weight 12 and a path with '->'\n");
         printf("         Got: %s\n", out);
         g_fail++;
@@ -191,10 +173,6 @@ static void test_assignment_example(const char *exe)
     free(out);
 }
 
-/*
- * T2 – No path (disconnected graph)
- * Nodes 0-1 and nodes 2-3 are in separate components; query 0→3.
- */
 static void test_no_path(const char *exe)
 {
     const char *graph =
@@ -204,13 +182,10 @@ static void test_no_path(const char *exe)
         "0 3\n";
     const char *path = write_tmp_file("t2", graph);
     char *out = capture_stdout(exe, path);
-    check("T2 – Disconnected graph → No path found", out, "No path found");
+    check("T2 - Disconnected graph -> No path found", out, "No path found");
     free(out);
 }
 
-/*
- * T3 – src == dst (non-trivial graph)
- */
 static void test_src_equals_dst(const char *exe)
 {
     const char *graph =
@@ -221,13 +196,10 @@ static void test_src_equals_dst(const char *exe)
         "0 0\n";
     const char *path = write_tmp_file("t3", graph);
     char *out = capture_stdout(exe, path);
-    check("T3 – src == dst → print node then 0", out, "0\n0");
+    check("T3 - src == dst -> print node then 0", out, "0\n0");
     free(out);
 }
 
-/*
- * T4 – Negative weight → must exit with error
- */
 static void test_negative_weight(const char *exe)
 {
     const char *graph =
@@ -236,12 +208,9 @@ static void test_negative_weight(const char *exe)
         "1 2 2\n"
         "0 2\n";
     const char *path = write_tmp_file("t4", graph);
-    check_error("T4 – Negative weight → error exit", exe, path);
+    check_error("T4 - Negative weight -> error exit", exe, path);
 }
 
-/*
- * T5 – Single node, src == dst == 0
- */
 static void test_single_node(const char *exe)
 {
     const char *graph =
@@ -249,14 +218,10 @@ static void test_single_node(const char *exe)
         "0 0\n";
     const char *path = write_tmp_file("t5", graph);
     char *out = capture_stdout(exe, path);
-    check("T5 – Single node, src==dst=0", out, "0\n0");
+    check("T5 - Single node, src==dst=0", out, "0\n0");
     free(out);
 }
 
-/*
- * T6 – Dijkstra picks lower-weight path (not fewest hops)
- * Direct edge 0→1 costs 10; via 0→2→1 costs 2.
- */
 static void test_weight_vs_hops(const char *exe)
 {
     const char *graph =
@@ -267,16 +232,11 @@ static void test_weight_vs_hops(const char *exe)
         "0 1\n";
     const char *path = write_tmp_file("t6", graph);
     char *out = capture_stdout(exe, path);
-    /* Expected: 0 -> 2 -> 1\n2 */
-    check("T6 – Shortest weight beats fewest hops (0->2->1, w=2)", out,
+    check("T6 - Shortest weight beats fewest hops (0->2->1, w=2)", out,
           "0 -> 2 -> 1\n2");
     free(out);
 }
 
-/*
- * T7 – Long detour is cheaper than direct edge
- * Direct 0→1 = 100; detour 0→2→3→4→1 = 1+1+1+1 = 4
- */
 static void test_long_detour(const char *exe)
 {
     const char *graph =
@@ -289,14 +249,11 @@ static void test_long_detour(const char *exe)
         "0 1\n";
     const char *path = write_tmp_file("t7", graph);
     char *out = capture_stdout(exe, path);
-    check("T7 – Long detour cheaper than direct (0->2->3->4->1, w=4)", out,
+    check("T7 - Long detour cheaper than direct (0->2->3->4->1, w=4)", out,
           "0 -> 2 -> 3 -> 4 -> 1\n4");
     free(out);
 }
 
-/*
- * T8 – Minimal graph: two nodes, one edge, query matches edge
- */
 static void test_two_nodes(const char *exe)
 {
     const char *graph =
@@ -305,14 +262,10 @@ static void test_two_nodes(const char *exe)
         "0 1\n";
     const char *path = write_tmp_file("t8", graph);
     char *out = capture_stdout(exe, path);
-    check("T8 – Two-node graph, direct edge (w=7)", out, "0 -> 1\n7");
+    check("T8 - Two-node graph, direct edge (w=7)", out, "0 -> 1\n7");
     free(out);
 }
 
-/*
- * T9 – No path in directed graph (edge only goes one way)
- * Edge exists 1→0 but not 0→1.
- */
 static void test_directed_no_return(const char *exe)
 {
     const char *graph =
@@ -321,14 +274,11 @@ static void test_directed_no_return(const char *exe)
         "0 1\n";
     const char *path = write_tmp_file("t9", graph);
     char *out = capture_stdout(exe, path);
-    check("T9 – Directed edge 1→0 only, query 0→1 → No path found", out,
+    check("T9 - Directed edge 1->0 only, query 0->1 -> No path found", out,
           "No path found");
     free(out);
 }
 
-/*
- * T10 – Missing input file → error exit
- */
 static void test_missing_file(const char *exe)
 {
     g_total++;
@@ -340,18 +290,15 @@ static void test_missing_file(const char *exe)
     int exit_code = WEXITSTATUS(ret);
     if (exit_code != 0) {
         printf(GREEN "  [PASS]" RESET
-               " T10 – Missing file → error exit (exit=%d)\n", exit_code);
+               " T10 - Missing file -> error exit (exit=%d)\n", exit_code);
         g_pass++;
     } else {
         printf(RED "  [FAIL]" RESET
-               " T10 – Missing file → expected non-zero exit, got 0\n");
+               " T10 - Missing file -> expected non-zero exit, got 0\n");
         g_fail++;
     }
 }
 
-/*
- * T11 – No arguments passed → usage error
- */
 static void test_no_args(const char *exe)
 {
     g_total++;
@@ -361,22 +308,17 @@ static void test_no_args(const char *exe)
     int exit_code = WEXITSTATUS(ret);
     if (exit_code != 0) {
         printf(GREEN "  [PASS]" RESET
-               " T11 – No arguments → error exit (exit=%d)\n", exit_code);
+               " T11 - No arguments -> error exit (exit=%d)\n", exit_code);
         g_pass++;
     } else {
         printf(RED "  [FAIL]" RESET
-               " T11 – No arguments → expected non-zero exit, got 0\n");
+               " T11 - No arguments -> expected non-zero exit, got 0\n");
         g_fail++;
     }
 }
 
-/*
- * T12 – Large-ish graph (15 nodes, guaranteed path)
- * Chain: 0→1→2→...→14, each weight 1. Query 0→14 = weight 14.
- */
 static void test_large_graph(const char *exe)
 {
-    /* build the graph string */
     char graph[2048];
     int pos = 0;
     pos += snprintf(graph + pos, sizeof(graph) - pos, "15 14\n");
@@ -387,7 +329,6 @@ static void test_large_graph(const char *exe)
     const char *path = write_tmp_file("t12", graph);
     char *out = capture_stdout(exe, path);
 
-    /* Build expected path string */
     char expected[512];
     int ep = 0;
     for (int i = 0; i <= 14; i++) {
@@ -396,36 +337,199 @@ static void test_large_graph(const char *exe)
     }
     ep += snprintf(expected + ep, sizeof(expected) - ep, "\n14");
 
-    check("T12 – Chain of 15 nodes (max per spec), weight=14", out, expected);
+    check("T12 - Chain of 15 nodes (max per spec), weight=14", out, expected);
     free(out);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  MILESTONE 6 - Lock-Integrity Validation Hooks
+ *
+ *  Call log_node_entry / log_node_exit from milestone5.c around the
+ *  critical section (sem_wait / sem_post) to generate a time-stamped
+ *  log.  Then call verify_lock_integrity() after the simulation ends
+ *  to confirm no two travelers occupied the same node concurrently.
+ *
+ *  Log file location: /tmp/m6_node_access.log
+ *  Log format per line:
+ *    ENTER <traveler_id> <node_id> <timestamp>
+ *    EXIT  <traveler_id> <node_id> <timestamp>
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define M6_LOG_FILE "/tmp/m6_node_access.log"
+#define MAX_LOG_RECORDS 4096
+#define MAX_NODES_TRACKED 64
+
+/* get_timestamp - wall-clock seconds with nanosecond resolution */
+double get_timestamp(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
+
+/* log_node_entry - call immediately after sem_wait returns */
+void log_node_entry(int traveler_id, int node_id, double timestamp)
+{
+    FILE *f = fopen(M6_LOG_FILE, "a");
+    if (!f) {
+        fprintf(stderr, "[tester] WARNING: cannot open log '%s'\n", M6_LOG_FILE);
+        return;
+    }
+    fprintf(f, "ENTER %d %d %.9f\n", traveler_id, node_id, timestamp);
+    fclose(f);
+}
+
+/* log_node_exit - call immediately before sem_post */
+void log_node_exit(int traveler_id, int node_id, double timestamp)
+{
+    FILE *f = fopen(M6_LOG_FILE, "a");
+    if (!f) {
+        fprintf(stderr, "[tester] WARNING: cannot open log '%s'\n", M6_LOG_FILE);
+        return;
+    }
+    fprintf(f, "EXIT  %d %d %.9f\n", traveler_id, node_id, timestamp);
+    fclose(f);
+}
+
+/* verify_lock_integrity - parse log and check for overlapping intervals
+ * Returns: 0 = no violations, >0 = number of violations, -1 = file error */
+int verify_lock_integrity(const char *log_file_path)
+{
+    const char *path = log_file_path ? log_file_path : M6_LOG_FILE;
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        fprintf(stderr, "[verify] ERROR: cannot open log file '%s'\n", path);
+        return -1;
+    }
+
+    typedef struct { int traveler_id; int node_id; double entry_time; } Pending;
+    typedef struct { int traveler_id; int node_id;
+                     double entry_time; double exit_time; } Interval;
+
+    static Pending  pending[MAX_LOG_RECORDS];
+    static Interval intervals[MAX_LOG_RECORDS];
+    int n_pending = 0, n_intervals = 0;
+
+    char line[256];
+    int line_no = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        line_no++;
+        if (line[0] == '\n' || line[0] == '#') continue;
+
+        char tag[8];
+        int  traveler_id, node_id;
+        double ts;
+
+        if (sscanf(line, "%7s %d %d %lf", tag, &traveler_id, &node_id, &ts) != 4)
+            continue;
+
+        if (strcmp(tag, "ENTER") == 0) {
+            if (n_pending < MAX_LOG_RECORDS)
+                pending[n_pending++] = (Pending){ traveler_id, node_id, ts };
+        } else if (strcmp(tag, "EXIT") == 0) {
+            int matched = -1;
+            for (int i = n_pending - 1; i >= 0; i--) {
+                if (pending[i].traveler_id == traveler_id &&
+                    pending[i].node_id     == node_id) {
+                    matched = i; break;
+                }
+            }
+            if (matched != -1 && n_intervals < MAX_LOG_RECORDS) {
+                intervals[n_intervals++] = (Interval){
+                    traveler_id, node_id,
+                    pending[matched].entry_time, ts
+                };
+                pending[matched] = pending[--n_pending];
+            }
+        }
+    }
+    fclose(f);
+
+    /* Sort intervals by entry_time */
+    for (int i = 0; i < n_intervals - 1; i++)
+        for (int j = i + 1; j < n_intervals; j++)
+            if (intervals[j].entry_time < intervals[i].entry_time) {
+                Interval tmp = intervals[i];
+                intervals[i] = intervals[j];
+                intervals[j] = tmp;
+            }
+
+    /* Check for overlaps per node */
+    int node_ids[MAX_NODES_TRACKED];
+    int n_nodes = 0;
+    for (int i = 0; i < n_intervals; i++) {
+        int nid = intervals[i].node_id, found = 0;
+        for (int j = 0; j < n_nodes; j++)
+            if (node_ids[j] == nid) { found = 1; break; }
+        if (!found && n_nodes < MAX_NODES_TRACKED)
+            node_ids[n_nodes++] = nid;
+    }
+
+    int total_violations = 0;
+    for (int ni = 0; ni < n_nodes; ni++) {
+        int nid = node_ids[ni];
+        static Interval node_ivs[MAX_LOG_RECORDS];
+        int cnt = 0;
+        for (int i = 0; i < n_intervals; i++)
+            if (intervals[i].node_id == nid)
+                node_ivs[cnt++] = intervals[i];
+
+        for (int i = 0; i < cnt - 1; i++) {
+            if (node_ivs[i].exit_time > node_ivs[i+1].entry_time) {
+                fprintf(stderr,
+                    "[verify] VIOLATION node=%-3d traveler %d held [%.3f-%.3f]"
+                    " overlaps traveler %d entry %.3f\n",
+                    nid,
+                    node_ivs[i].traveler_id,
+                    node_ivs[i].entry_time,
+                    node_ivs[i].exit_time,
+                    node_ivs[i+1].traveler_id,
+                    node_ivs[i+1].entry_time);
+                total_violations++;
+            }
+        }
+    }
+
+    printf("[verify] Log file  : %s\n", path);
+    printf("[verify] Intervals : %d  (across %d nodes)\n", n_intervals, n_nodes);
+    if (total_violations == 0)
+        printf("[verify] Result    : " GREEN "PASS" RESET
+               " - no concurrent-node violations\n");
+    else
+        printf("[verify] Result    : " RED "FAIL" RESET
+               " - %d violation(s) detected\n", total_violations);
+
+    return total_violations;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
  *  main
  * ═══════════════════════════════════════════════════════════════════ */
-int main(int argc, char *argv[])
+int run_test(int argc, char *argv[])
 {
     const char *exe = (argc >= 2) ? argv[1] : "./Project";
 
     printf(YELLOW
            "\n╔══════════════════════════════════════════════╗\n"
-           "║   OS Project – Milestone 1 Test Suite       ║\n"
+           "║   OS Project - Milestone 1 Test Suite       ║\n"
            "║   Executable: %-28s  ║\n"
            "╚══════════════════════════════════════════════╝\n"
            RESET, exe);
 
-    test_assignment_example(exe);   /* T1  */
-    test_no_path(exe);              /* T2  */
-    test_src_equals_dst(exe);       /* T3  */
-    test_negative_weight(exe);      /* T4  */
-    test_single_node(exe);          /* T5  */
-    test_weight_vs_hops(exe);       /* T6  */
-    test_long_detour(exe);          /* T7  */
-    test_two_nodes(exe);            /* T8  */
-    test_directed_no_return(exe);   /* T9  */
-    test_missing_file(exe);         /* T10 */
-    test_no_args(exe);              /* T11 */
-    test_large_graph(exe);          /* T12 */
+    test_assignment_example(exe);
+    test_no_path(exe);
+    test_src_equals_dst(exe);
+    test_negative_weight(exe);
+    test_single_node(exe);
+    test_weight_vs_hops(exe);
+    test_long_detour(exe);
+    test_two_nodes(exe);
+    test_directed_no_return(exe);
+    test_missing_file(exe);
+    test_no_args(exe);
+    test_large_graph(exe);
 
     printf(YELLOW
            "\n╔══════════════════════════════════════════════╗\n"
