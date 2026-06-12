@@ -488,43 +488,6 @@ void ExecuteCentralLoggingOutput(const ChildTraveler *updater,
 
     fflush(stdout);   /* guarantee live output visibility */
 }
-
-/* ═══════════════════════════════════════════════════════════════════
- *  Task 6 – SynchronizeProcessTerminations
- * ═══════════════════════════════════════════════════════════════════ */
-void SynchronizeProcessTerminations(ParentSimulation *sim)
-{
-    if (!sim) return;
-
-    printf("[parent] Waiting for all child processes to finish...\n");
-    fflush(stdout);
-
-    for (int i = 0; i < sim->total_travelers; i++) {
-        pid_t pid = sim->travelers[i].pid;
-        if (pid <= 0) continue;   /* never forked or already reaped */
-
-        int   status = 0;
-        pid_t result = waitpid(pid, &status, 0);   /* blocks until child exits */
-
-        if (result == -1) {
-            perror("[parent] waitpid");
-            continue;
-        }
-
-        if (WIFEXITED(status)) {
-            printf("[parent] child PID %d exited with code %d\n",
-                   (int)pid, WEXITSTATUS(status));
-        } else if (WIFSIGNALED(status)) {
-            printf("[parent] child PID %d killed by signal %d\n",
-                   (int)pid, WTERMSIG(status));
-        }
-        fflush(stdout);
-    }
-
-    printf("[parent] All children have terminated.\n");
-    fflush(stdout);
-}
-
 /* ═══════════════════════════════════════════════════════════════════
  *  FreeParentSimulation
  * ═══════════════════════════════════════════════════════════════════ */
