@@ -1,0 +1,55 @@
+# heavy_traffic.txt  –  Milestone 6 Stress-Test Configuration
+#
+# PURPOSE
+# ───────
+# This graph is purpose-built to force maximum node contention.
+# Node 4 is the mandatory bottleneck: every path from any source
+# to any destination MUST pass through node 4.  All 4 travelers
+# start simultaneously, guaranteeing they race to acquire node 4's
+# semaphore at nearly the same physical timestamp.
+#
+# GRAPH TOPOLOGY (8 nodes, 9 directed edges)
+# ──────────────────────────────────────────
+#  Sources cluster (one hop to bottleneck):
+#    0 → 4  (weight 1)   traveler A departs here
+#    1 → 4  (weight 1)   traveler B departs here
+#    2 → 4  (weight 1)   traveler C departs here
+#    3 → 4  (weight 1)   traveler D departs here
+#
+#  Bottleneck fan-out (one hop from bottleneck):
+#    4 → 5  (weight 1)
+#    4 → 6  (weight 1)
+#    4 → 7  (weight 1)
+#
+#  Cross-edge to create secondary contention at node 5:
+#    5 → 6  (weight 1)
+#    6 → 7  (weight 1)
+#
+# CONTENTION GUARANTEES
+# ─────────────────────
+#  • Primary contention  : nodes 0-3 each have weight-1 edges to node 4.
+#    All 4 children reach node 4 after exactly 1 edge traversal → they
+#    arrive almost simultaneously → 3 of them will block in SYNC_WAITING.
+#
+#  • Secondary contention: travelers heading to nodes 6 and 7 must pass
+#    through node 5, creating a second wave of lock collisions.
+#
+# FORMAT: first line = <num_nodes> <num_edges>
+#         next lines = <src> <dst> <weight>   (one per edge)
+#         then       = <num_travelers>
+#         then       = <src> <dst>            (one per traveler)
+8 9
+0 4 1
+1 4 1
+2 4 1
+3 4 1
+4 5 1
+4 6 1
+4 7 1
+5 6 1
+6 7 1
+4
+0 7
+1 6
+2 5
+3 7

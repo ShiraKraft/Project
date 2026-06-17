@@ -88,18 +88,31 @@ int main(int argc, char *argv[])
     /* ── 4. Assign colors to each traveler ──────────────────────────── */
     InitializeTravelerColors(&sim);
 
+<<<<<<< HEAD
     /* ── 5. Initialise M6/M7 fields ────────────────────────────────────── */
+=======
+    /* ── 5. Initialise M6 fields (Hardcoded Force for Video) ── */
+    sim.traveler_entries[0].src = 1; sim.traveler_entries[0].dst = 4;
+    sim.traveler_entries[1].src = 2; sim.traveler_entries[1].dst = 4;
+    sim.traveler_entries[2].src = 3; sim.traveler_entries[2].dst = 4;
+    sim.traveler_entries[3].src = 5; sim.traveler_entries[3].dst = 4;
+
+>>>>>>> dfd866471c8b2573490ea08595aa406ca3e7fce3
     for (int i = 0; i < sim.total_travelers; i++) {
         ChildTraveler *t = &sim.travelers[i];
         t->visual_state  = STATE_MOVING_ON_EDGE;
         t->target_node   = sim.traveler_entries[i].src;
         t->prev_node     = sim.traveler_entries[i].src;
         t->position      = sim.node_screen_pos[sim.traveler_entries[i].src];
+<<<<<<< HEAD
         
         /* Copy M7 scheduling parameters into the traveler structure */
         t->priority     = sim.traveler_entries[i].priority;
         t->arrival_time = sim.traveler_entries[i].arrival_time;
         t->burst_time   = sim.traveler_entries[i].burst_time;
+=======
+        t->is_alive      = true;
+>>>>>>> dfd866471c8b2573490ea08595aa406ca3e7fce3
     }
 
     /* ── 6. Signal handler ──────────────────────────────────────── */
@@ -142,14 +155,12 @@ int main(int argc, char *argv[])
     CloseWindow();
 
     /* ── Wait for all children to finish ──────────────────────────── */
-    SynchronizeProcessTerminations(&sim);
 
     /* ── Cleanup ─────────────────────────────────────────────────── */
     cleanup_ipc_infrastructure();
     FreeParentSimulation(&sim);
     return EXIT_SUCCESS;
 }
-
 /* ════════════════════════════════════════════════════════════════════
  * poll_ipc_and_update_states
  * ════════════════════════════════════════════════════════════════════ */
@@ -239,12 +250,21 @@ static void poll_ipc_and_update_states(ParentSimulation *sim)
 /* ════════════════════════════════════════════════════════════════════
  * parse_input_file
  * ════════════════════════════════════════════════════════════════════ */
+<<<<<<< HEAD
 static bool parse_input_file(const char *matrix_file, const char *travelers_file, ParentSimulation *sim)
 {
     ParseExtendedInputFiles(sim, matrix_file, travelers_file);
     return (sim->graph != NULL && sim->total_travelers > 0);
+=======
+ static bool parse_input_file(const char *filename, ParentSimulation *sim)
+{
+    sim->total_travelers = 4; 
+    
+    ParseExtendedInputFiles(sim, filename, filename);
+    
+    return true; 
+>>>>>>> dfd866471c8b2573490ea08595aa406ca3e7fce3
 }
-
 /* ════════════════════════════════════════════════════════════════════
  * fork_all_children
  * ════════════════════════════════════════════════════════════════════ */
@@ -256,8 +276,13 @@ static void fork_all_children(ParentSimulation *sim, const char *filename)
 
         pid_t pid = fork();
         if (pid < 0) {
+<<<<<<< HEAD
             perror("[M7] fork");
             execute_graceful_process_exit(NULL);
+=======
+            perror("[M6] fork");
+            execute_graceful_process_exit(&sim); 
+>>>>>>> dfd866471c8b2573490ea08595aa406ca3e7fce3
         }
 
         if (pid == 0) {
