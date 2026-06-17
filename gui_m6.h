@@ -95,6 +95,9 @@ typedef struct {
     TravelerVisualState visual_state; /* current sync state             */
     int     target_node;  /* node whose lock is wanted / held           */
     int     prev_node;    /* node departed from (for queue offset dir)  */
+    int priority;
+    int arrival_time;
+    int burst_time;
 } ChildTraveler;
 
 
@@ -117,6 +120,9 @@ typedef struct {
 typedef struct {
     int src;
     int dst;
+    int arrival_time;   /* time-step the traveler enters the simulation */
+    int priority;       /* lower number = higher priority (for priority-based schedulers) */
+    int burst_time;     /* expected "service time" at a node, used by SJF */
 } TravelerEntry;
 
 typedef struct {

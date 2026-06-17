@@ -1,13 +1,3 @@
-/*
- * main_m6.c  –  Milestone 6: Node Access Synchronisation – Entry Point
- *
- * Changes from main_m5.c:
- *   • poll_ipc_and_update_states() reads the sync_state and target_node fields
- *     and translates them directly into TravelerVisualState.
- *   • Calls UpdateTravelersPositions() every frame to update queues.
- *   • Calls RenderSimulationFrame() instead of RenderMultiColorTravelerIndicators().
- */
-
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
@@ -21,44 +11,72 @@
 
 #include "raylib.h"
 #include "graph.h"
+#include "milestone5.h"       /* Defines ParentSimulation, ChildTraveler */
 #include "gui_m6.h"
 #include "ipc_protocol.h"    /* StatusMessage, SyncState */
 #include "parent_ipc.h"
 #include "child_ipc.h"
-#include "milestone5.h"
 #include "signal_handler.h"
+#include "waiting_queue.h"
 
 /* ════════════════════════════════════════════════════════════════════
- *  Local declarations
+ * Global Scheduling Variables (Milestone 7)
  * ════════════════════════════════════════════════════════════════════ */
-static bool parse_input_file(const char *filename, ParentSimulation *sim);
+WaitingQueue node_queues[64]; 
+bool use_sjf = false; /* false = FCFS, true = SJF */
+
+/* ════════════════════════════════════════════════════════════════════
+ * Local declarations
+ * ════════════════════════════════════════════════════════════════════ */
+static bool parse_input_file(const char *matrix_file, const char *travelers_file, ParentSimulation *sim);
 static void fork_all_children(ParentSimulation *sim, const char *filename);
 static void poll_ipc_and_update_states(ParentSimulation *sim);
 
 /* ════════════════════════════════════════════════════════════════════
- *  main
+ * main
  * ════════════════════════════════════════════════════════════════════ */
 int main(int argc, char *argv[])
 {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <input_file>\n", argv[0]);
+    /* Validate command line arguments as required by Milestone 7 */
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <fcfs|sjf> <travelers_file> [matrix_file]\n", argv[0]);
         return EXIT_FAILURE;
+    }
+
+    /* Set scheduling algorithm based on user input */
+    if (strcmp(argv[1], "sjf") == 0) {
+        use_sjf = true;
+        printf("[Parent] Using Shortest Job First (SJF) scheduling.\n");
+    } else if (strcmp(argv[1], "fcfs") == 0) {
+        use_sjf = false;
+        printf("[Parent] Using First-Come, First-Served (FCFS) scheduling.\n");
+    } else {
+        fprintf(stderr, "Error: Invalid scheduling algorithm '%s'. Use 'fcfs' or 'sjf'.\n", argv[1]);
+        return EXIT_FAILURE;
+    }
+
+    /* Initialize all node waiting queues */
+    for (int i = 0; i < 64; i++) {
+        init_queue(&node_queues[i]);
     }
 
     ParentSimulation sim;
     memset(&sim, 0, sizeof(sim));
 
+    const char *travelers_file = argv[2];
+    const char *matrix_file = (argc >= 4) ? argv[3] : argv[2];
+
     /* ── 1. Parse input ─────────────────────────────────────────────── */
-    if (!parse_input_file(argv[1], &sim)) {
-        fprintf(stderr, "[M6] ERROR: failed to parse '%s'\n", argv[1]);
+    if (!parse_input_file(matrix_file, travelers_file, &sim)) {
+        fprintf(stderr, "[M7] ERROR: failed to parse input files\n");
         return EXIT_FAILURE;
     }
-    printf("[M6] Graph: %d nodes | Travelers: %d\n",
+    printf("[M7] Graph: %d nodes | Travelers: %d\n",
            sim.graph->vertices, sim.total_travelers);
 
     /* ── 2. IPC ──────────────────────────────────────────────────── */
     if (init_ipc_infrastructure(sim.total_travelers) != 0) {
-        fprintf(stderr, "[M6] ERROR: IPC init failed\n");
+        fprintf(stderr, "[M7] ERROR: IPC init failed\n");
         FreeParentSimulation(&sim);
         return EXIT_FAILURE;
     }
@@ -70,24 +88,29 @@ int main(int argc, char *argv[])
     /* ── 4. Assign colors to each traveler ──────────────────────────── */
     InitializeTravelerColors(&sim);
 
-    /* ── 5. Initialise M6 fields ────────────────────────────────────── */
+    /* ── 5. Initialise M6/M7 fields ────────────────────────────────────── */
     for (int i = 0; i < sim.total_travelers; i++) {
         ChildTraveler *t = &sim.travelers[i];
         t->visual_state  = STATE_MOVING_ON_EDGE;
         t->target_node   = sim.traveler_entries[i].src;
         t->prev_node     = sim.traveler_entries[i].src;
         t->position      = sim.node_screen_pos[sim.traveler_entries[i].src];
+        
+        /* Copy M7 scheduling parameters into the traveler structure */
+        t->priority     = sim.traveler_entries[i].priority;
+        t->arrival_time = sim.traveler_entries[i].arrival_time;
+        t->burst_time   = sim.traveler_entries[i].burst_time;
     }
 
     /* ── 6. Signal handler ──────────────────────────────────────── */
     setup_signal_handler();
 
     /* ── 7. Fork ────────────────────────────────────────────────── */
-    fork_all_children(&sim, argv[1]);
+    fork_all_children(&sim, travelers_file);
     close_parent_write_ends();
 
     /* ════════════════════════════════════════════════════════════════
-     *  Main GUI loop
+     * Main GUI loop
      * ════════════════════════════════════════════════════════════════ */
     while (!WindowShouldClose() && !termination_requested) {
 
@@ -104,8 +127,12 @@ int main(int argc, char *argv[])
 
         /* Check whether all travelers have finished */
         bool all_done = true;
-        for (int i = 0; i < sim.total_travelers; i++)
-            if (sim.travelers[i].is_alive) { all_done = false; break; }
+        for (int i = 0; i < sim.total_travelers; i++) {
+            if (sim.travelers[i].is_alive) { 
+                all_done = false; 
+                break; 
+            }
+        }
         if (all_done) {
             WaitTime(2.0);
             break;
@@ -124,14 +151,7 @@ int main(int argc, char *argv[])
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  poll_ipc_and_update_states
- *
- *  Drains all accumulated messages from every child and translates sync_state
- *  into TravelerVisualState accordingly:
- *
- *    SYNC_WAITING → STATE_WAITING_OUTSIDE
- *    SYNC_INSIDE  → STATE_INSIDE_NODE
- *    SYNC_MOVING  → STATE_MOVING_ON_EDGE
+ * poll_ipc_and_update_states
  * ════════════════════════════════════════════════════════════════════ */
 static void poll_ipc_and_update_states(ParentSimulation *sim)
 {
@@ -152,8 +172,7 @@ static void poll_ipc_and_update_states(ParentSimulation *sim)
             if (msg.is_finished) {
                 t->is_alive     = false;
                 t->visual_state = STATE_MOVING_ON_EDGE;
-                ExecuteCentralLoggingOutput(t, LOG_EVENT_FINISHED,
-                                            msg.current_node);
+                ExecuteCentralLoggingOutput(t, LOG_EVENT_FINISHED, msg.current_node);
                 break;
             }
 
@@ -161,51 +180,50 @@ static void poll_ipc_and_update_states(ParentSimulation *sim)
             switch ((SyncState)msg.sync_state) {
 
             case SYNC_WAITING:
-                /*
-                 * The traveler is queued outside the node.
-                 * prev_node  = the last node it was at (current_node).
-                 * target_node = the node it is trying to enter.
-                 */
                 t->prev_node    = msg.current_node;
                 t->target_node  = msg.target_node;
                 t->visual_state = STATE_WAITING_OUTSIDE;
-                /* Update position to the current node (base for computing the wait queue) */
-                if (msg.current_node >= 0 &&
-                    msg.current_node < sim->graph->vertices)
+                
+                /* M7 Scheduling Logic: Insert traveler into the node's waiting queue if not present */
+                if (get_traveler_queue_index(&node_queues[msg.target_node], t->pid) == -1) {
+                    if (use_sjf) {
+                        enqueue_sjf(&node_queues[msg.target_node], t->pid, t->priority, t->arrival_time, t->burst_time);
+                    } else {
+                        enqueue_fcfs(&node_queues[msg.target_node], t->pid, t->priority, t->arrival_time, t->burst_time);
+                    }
+                }
+
+                if (msg.current_node >= 0 && msg.current_node < sim->graph->vertices)
                     t->position = sim->node_screen_pos[msg.current_node];
-                ExecuteCentralLoggingOutput(t, LOG_EVENT_WAITING,
-                                            msg.target_node);
+                
+                ExecuteCentralLoggingOutput(t, LOG_EVENT_WAITING, msg.target_node);
                 break;
 
             case SYNC_INSIDE:
-                /*
-                 * The traveler has acquired the lock and is inside the node.
-                 */
                 t->target_node  = msg.target_node;
                 t->visual_state = STATE_INSIDE_NODE;
-                ExecuteCentralLoggingOutput(t, LOG_EVENT_ENTERED,
-                                            msg.target_node);
+                
+                /* M7 Scheduling Logic: Pop from the queue since they acquired access */
+                if (node_queues[msg.target_node].size > 0 && node_queues[msg.target_node].travelers[0].pid == t->pid) {
+                    dequeue_front(&node_queues[msg.target_node]);
+                }
+
+                ExecuteCentralLoggingOutput(t, LOG_EVENT_ENTERED, msg.target_node);
                 break;
 
             case SYNC_MOVING:
             default:
-                /*
-                 * The traveler is moving along an edge / has released the lock.
-                 */
                 t->prev_node    = msg.current_node;
                 t->target_node  = msg.next_node;
                 t->visual_state = STATE_MOVING_ON_EDGE;
-                /* Update screen position to the current node */
-                if (msg.current_node >= 0 &&
-                    msg.current_node < sim->graph->vertices)
+                
+                if (msg.current_node >= 0 && msg.current_node < sim->graph->vertices)
                     t->position = sim->node_screen_pos[msg.current_node];
 
                 if (msg.is_destination)
-                    ExecuteCentralLoggingOutput(t, LOG_EVENT_DESTINATION,
-                                                msg.current_node);
+                    ExecuteCentralLoggingOutput(t, LOG_EVENT_DESTINATION, msg.current_node);
                 else
-                    ExecuteCentralLoggingOutput(t, LOG_EVENT_ARRIVED,
-                                                msg.current_node);
+                    ExecuteCentralLoggingOutput(t, LOG_EVENT_ARRIVED, msg.current_node);
                 break;
             }
         }
@@ -219,16 +237,16 @@ static void poll_ipc_and_update_states(ParentSimulation *sim)
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  parse_input_file
+ * parse_input_file
  * ════════════════════════════════════════════════════════════════════ */
-static bool parse_input_file(const char *filename, ParentSimulation *sim)
+static bool parse_input_file(const char *matrix_file, const char *travelers_file, ParentSimulation *sim)
 {
-    ParseExtendedInputFiles(sim, filename, filename);
+    ParseExtendedInputFiles(sim, matrix_file, travelers_file);
     return (sim->graph != NULL && sim->total_travelers > 0);
 }
 
 /* ════════════════════════════════════════════════════════════════════
- *  fork_all_children
+ * fork_all_children
  * ════════════════════════════════════════════════════════════════════ */
 static void fork_all_children(ParentSimulation *sim, const char *filename)
 {
@@ -238,14 +256,14 @@ static void fork_all_children(ParentSimulation *sim, const char *filename)
 
         pid_t pid = fork();
         if (pid < 0) {
-            perror("[M6] fork");
-            execute_graceful_process_exit();
+            perror("[M7] fork");
+            execute_graceful_process_exit(NULL);
         }
 
         if (pid == 0) {
             /* CHILD */
             run_child_m5(src, dst, filename, i, sim->total_travelers);
-            exit(EXIT_SUCCESS); /* should never be reached */
+            exit(EXIT_SUCCESS);
         }
 
         /* PARENT */
