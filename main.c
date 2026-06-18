@@ -17,6 +17,7 @@
 
 #include "graph.h"
 #include "gui.h"
+#include "scheduler.h"
 
 static void usage(const char* prog)
 {
@@ -133,13 +134,18 @@ int main(int argc, char* argv[])
 
     const char* filename = NULL;
 
+    // Handle scheduling arguments for milestone 7
     if (argc == 2) {
         filename = argv[1];
-    } else if (argc == 4 && strcmp(argv[1], "-schd") == 0) {
+    }
+    else if (argc == 4 && strcmp(argv[1], "-schd") == 0) {
         filename = argv[3];
-        printf("[INFO] Scheduler '%s' selected (milestone 7 – not yet implemented).\n",
-               argv[2]);
-    } else {
+        // Initialize scheduler based on user selection
+        SchedType type = (strcmp(argv[2], "sjf") == 0) ? SCHED_SJF : SCHED_FCFS;
+        init_scheduler(type);
+        printf("[INFO] Scheduler '%s' active.\n", argv[2]);
+    }
+    else {
         usage(argv[0]);
         return EXIT_FAILURE;
     }
@@ -147,8 +153,15 @@ int main(int argc, char* argv[])
     const char* prog = strrchr(argv[0], '/');
     prog = prog ? prog + 1 : argv[0];
 
+    int result;
     if (strcmp(prog, "dijkstra") == 0)
-        return run_milestone1(filename);
+        result = run_milestone1(filename);
+    else
+        result = run_gui(filename);
 
-    return run_gui(filename);
+    if (argc == 4 && strcmp(argv[1], "-schd") == 0) {
+        destroy_scheduler();
+    }
+
+    return result;
 }
