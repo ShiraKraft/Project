@@ -263,3 +263,22 @@ DEMO VIDEO - MILESTONE 6
     7. Terminal showing exit code 0:  echo $?
 
   (Place the recording file in the repository root.)
+
+  ## Testing & Validation (Milestone 7)
+
+### Custom Scenario for SJF (Scenario 2)
+A custom input scenario (`scenario2.txt`) was designed to clearly demonstrate the specific behavior and traits of the Shortest Job First (SJF) algorithm compared to FCFS.
+
+**Scenario Structure:**
+* **P1:** Arrival Time = 0, Burst Time = 50 (A very long process arriving first)
+* **P2:** Arrival Time = 1, Burst Time = 2  (Short process)
+* **P3:** Arrival Time = 1, Burst Time = 4  (Medium process)
+* **P4:** Arrival Time = 1, Burst Time = 1  (Very short process)
+
+**Expected Mathematical Behavior:**
+* **In FCFS:** `P1` executes first and occupies the CPU for 50 units of time. This causes `P2`, `P3`, and `P4` to wait for a very long time in the queue (known as the *Convoy Effect*), resulting in a high average waiting time.
+* **In SJF:** After `P1` finishes, the scheduler looks at the waiting queue and prioritizes the shortest jobs first. Therefore, the execution order will be `P4` -> `P2` -> `P3`. This drastically reduces the average waiting time for the system, proving the efficiency of the SJF algorithm under heavy short-job traffic.
+
+### Automated Tests
+* `test_sjf.c`: A self-contained unit test that simulates a dummy waiting queue, runs the SJF sorting logic, and asserts that processes are selected exactly in the expected mathematical order (shortest job first).
+* `test_cli.c`: A CLI validation test that ensures the system gracefully rejects invalid flags or missing arguments, and prints the correct usage instructions without crashing.
