@@ -36,8 +36,8 @@ void log_node_exit(int traveler_id, int node_id, double timestamp);
 
 
 /* ── Timing constants ───────────────────────────────────────────── */
-#define HOP_DELAY_US   (300 * 1000)    /* 300 ms per edge hop        */
-#define NODE_WAIT_US  (1000 * 1000)    /* 1 s dwell at each node     */
+#define HOP_DELAY_US   (500 * 1000)    /* 300 ms per edge hop        */
+#define NODE_WAIT_US  (3000 * 1000)    /* 1 s dwell at each node     */
 
 /* ── Helpers for Per-Node Semaphores ────────────────────────────── */
 
@@ -87,6 +87,12 @@ void run_child_m5(int src, int dst,
                   int child_index, int total_children)
 {
     (void)total_children;
+
+    /* ── 0. Barrier: all children wait 1.5 s so that every process   ──
+     *    is fully forked before anyone starts moving.  This guarantees
+     *    they arrive at the bottleneck node simultaneously, making the
+     *    FCFS vs SJF scheduling difference clearly visible.           */
+    usleep(1500 * 1000);   /* 1.5 s startup barrier */
 
     /* ── 1. Initialise IPC ─────────────────────────────────────────── */
     if (init_child_ipc_side(child_index) != 0)

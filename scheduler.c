@@ -1,6 +1,10 @@
 /*
  * scheduler.c  –  Milestone 7: Scheduling Algorithm (FCFS / SJF)
  *
+ * FIX (M7): destroy_scheduler() was erroneously nested as a local function
+ * definition inside generate_test_scenario().  It is now a proper top-level
+ * function declared in scheduler.h.  All other logic is unchanged.
+ *
  * Uses the existing WaitingQueue from waiting_queue.c for the actual
  * per-node queues; the SchedulerState linked list here is the global
  * intersection scheduler that decides which traveler enters next.
@@ -19,6 +23,7 @@ static SchedulerState g_scheduler = { NULL, SCHED_FCFS, true };
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  A.  init_scheduler
+ *      Resets the linked list and records the chosen algorithm.
  * ═══════════════════════════════════════════════════════════════════════════ */
 void init_scheduler(SchedType type)
 {
@@ -33,16 +38,22 @@ void init_scheduler(SchedType type)
     g_scheduler.head     = NULL;
     g_scheduler.type     = type;
     g_scheduler.is_empty = true;
+
+    printf("[Scheduler] Initialised with algorithm: %s\n",
+           type == SCHED_SJF ? "SJF" : "FCFS");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  B.  schedule_add
+ *      FCFS → append to tail (arrival order preserved).
+ *      SJF  → ordered insert ascending on estimated_time; ties keep
+ *             arrival order (stable sort property).
  * ═══════════════════════════════════════════════════════════════════════════ */
 void schedule_add(int child_id, int estimated_time)
 {
     QueueNode *node = (QueueNode *)malloc(sizeof(QueueNode));
     if (!node) {
-        fprintf(stderr, "scheduler: malloc failed\n");
+        fprintf(stderr, "[Scheduler] malloc failed in schedule_add\n");
         return;
     }
     node->child_id       = child_id;
@@ -78,10 +89,15 @@ void schedule_add(int child_id, int estimated_time)
     }
 
     g_scheduler.is_empty = false;
+    printf("[Scheduler] Added child_id=%d burst=%d  (algo=%s)\n",
+           child_id, estimated_time,
+           g_scheduler.type == SCHED_SJF ? "SJF" : "FCFS");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  C.  schedule_next
+ *      Pops and returns the child_id at the head of the queue.
+ *      Returns -1 if the queue is empty.
  * ═══════════════════════════════════════════════════════════════════════════ */
 int schedule_next(void)
 {
@@ -94,11 +110,33 @@ int schedule_next(void)
     free(front);
 
     g_scheduler.is_empty = (g_scheduler.head == NULL);
+
+    printf("[Scheduler] Dispatching child_id=%d\n", result);
     return result;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  D.  test_algorithm_a  –  Unit tests for FCFS and SJF (Task #21)
+ *  D.  destroy_scheduler
+ *      Drains the queue and frees all nodes.  Safe to call multiple times.
+ *
+ *  BUG FIX: This was previously a nested function inside
+ *  generate_test_scenario(), which is undefined behaviour in C11.
+ *  It is now a proper file-scope function matching the header declaration.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+void destroy_scheduler(void)
+{
+    /* Drain remaining nodes */
+    while (g_scheduler.head) {
+        QueueNode *tmp   = g_scheduler.head;
+        g_scheduler.head = tmp->next;
+        free(tmp);
+    }
+    g_scheduler.is_empty = true;
+    printf("[Scheduler] Resources destroyed.\n");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  E.  test_algorithm_a  –  Unit tests for FCFS and SJF
  * ═══════════════════════════════════════════════════════════════════════════ */
 void test_algorithm_a(void)
 {
@@ -148,7 +186,6 @@ void test_algorithm_a(void)
     schedule_add(1, 4);
     schedule_add(2, 4);
     schedule_add(3, 4);
-    /* All have the same burst time; ordered insert keeps arrival order */
     assert(schedule_next() == 1 && "SJF tie: first arrival first");
     assert(schedule_next() == 2 && "SJF tie: second arrival second");
     assert(schedule_next() == 3 && "SJF tie: third arrival third");
@@ -166,17 +203,20 @@ void test_algorithm_a(void)
     printf("\n╔══════════════════════════════════════════╗\n");
     printf("║      All 5 scheduler tests passed ✓     ║\n");
     printf("╚══════════════════════════════════════════╝\n\n");
+
+    destroy_scheduler();   /* clean up after tests */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  E.  generate_test_scenario
+ *  F.  generate_test_scenario
  *
  *  Writes a travelers input file that forces SJF to demonstrate its
- *  advantage: a short job that arrives after a long one must be served first.
- *
- *  File format (matches ParseInputRequest / ParseExtendedInputFiles):
- *    Line 1: number of travelers
+ *  advantage over FCFS.  File format (matches ParseExtendedInputFiles):
+ *    Line 1: number_of_travelers
  *    Lines 2+: src dst burst_time
+ *
+ *  Expected SJF  order: traveler 3 → 1 → 2 → 0
+ *  Expected FCFS order: traveler 0 → 1 → 2 → 3
  * ═══════════════════════════════════════════════════════════════════════════ */
 void generate_test_scenario(const char *filename)
 {
@@ -187,30 +227,14 @@ void generate_test_scenario(const char *filename)
         fprintf(stderr, "generate_test_scenario: cannot open '%s'\n", filename);
         return;
     }
-    void destroy_scheduler(void) {
-        while (!g_scheduler.is_empty) {
-            schedule_next();
-        }
-        printf("[m7] Scheduler resources destroyed.\n");
-    }
-    /*
-     * Scenario: 4 travelers on a 5-node graph.
-     *   Traveler 0: src=0, dst=4, burst=9  (long  job – arrives first)
-     *   Traveler 1: src=1, dst=3, burst=2  (short job – arrives second)
-     *   Traveler 2: src=0, dst=2, burst=5  (mid   job – arrives third)
-     *   Traveler 3: src=2, dst=4, burst=1  (very short – arrives last)
-     *
-     * Expected SJF order: traveler 3 → traveler 1 → traveler 2 → traveler 0
-     * Expected FCFS order: traveler 0 → 1 → 2 → 3
-     */
+
     fprintf(fp, "4\n");          /* total_travelers */
-    fprintf(fp, "0 4 9\n");      /* traveler 0 */
-    fprintf(fp, "1 3 2\n");      /* traveler 1 */
-    fprintf(fp, "0 2 5\n");      /* traveler 2 */
-    fprintf(fp, "2 4 1\n");      /* traveler 3 */
+    fprintf(fp, "0 4 9\n");      /* traveler 0: long  job, arrives first  */
+    fprintf(fp, "1 3 2\n");      /* traveler 1: short job, arrives second */
+    fprintf(fp, "0 2 5\n");      /* traveler 2: mid   job, arrives third  */
+    fprintf(fp, "2 4 1\n");      /* traveler 3: very short, arrives last  */
 
     fclose(fp);
-    printf("[m7] test scenario written to '%s'\n", filename);
+    printf("[M7] Test scenario written to '%s'\n", filename);
     fflush(stdout);
 }
-

@@ -158,8 +158,12 @@ void ParseExtendedInputFiles(ParentSimulation *sim,
         while (*p == ' ' || *p == '\t') p++;
         if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0') continue;
 
-        int s = 0, d = 0;
-        if (sscanf(line, "%d %d", &s, &d) != 2) continue;
+        int s = 0, d = 0, burst = 1;
+
+        /* Support both "src dst" (M5/M6) and "src dst burst_time" (M7) */
+        int fields = sscanf(line, "%d %d %d", &s, &d, &burst);
+        if (fields < 2) continue;
+        if (fields < 3) burst = 1;  /* default burst if not in file */
 
         if (s < 0 || s >= sim->graph->vertices ||
             d < 0 || d >= sim->graph->vertices) {
@@ -173,8 +177,11 @@ void ParseExtendedInputFiles(ParentSimulation *sim,
             exit(EXIT_FAILURE);
         }
 
-        sim->traveler_entries[travelers_read].src = s;
-        sim->traveler_entries[travelers_read].dst = d;
+        sim->traveler_entries[travelers_read].src          = s;
+        sim->traveler_entries[travelers_read].dst          = d;
+        sim->traveler_entries[travelers_read].burst_time   = burst;
+        sim->traveler_entries[travelers_read].arrival_time = travelers_read;
+        sim->traveler_entries[travelers_read].priority     = 0;
 
         /* Pre-fill ChildTraveler slot */
         sim->travelers[travelers_read].src          = s;
@@ -183,6 +190,9 @@ void ParseExtendedInputFiles(ParentSimulation *sim,
         sim->travelers[travelers_read].next_node    = -1;
         sim->travelers[travelers_read].is_alive     = false;
         sim->travelers[travelers_read].pid          = -1;
+        sim->travelers[travelers_read].burst_time   = burst;
+        sim->travelers[travelers_read].arrival_time = travelers_read;
+        sim->travelers[travelers_read].priority     = 0;
 
         travelers_read++;
     }
@@ -478,6 +488,16 @@ void ExecuteCentralLoggingOutput(const ChildTraveler *updater,
 
         case LOG_EVENT_FINISHED:
             printf("[%d] finished\n", (int)updater->pid);
+            break;
+
+        case LOG_EVENT_WAITING:
+            printf("[%d] WAITING outside node %d\n",
+                   (int)updater->pid, node_id);
+            break;
+
+        case LOG_EVENT_ENTERED:
+            printf("[%d] ENTERED node %d\n",
+                   (int)updater->pid, node_id);
             break;
 
         default:

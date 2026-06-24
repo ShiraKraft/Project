@@ -450,6 +450,6 @@ void RenderSimulationFrame(const ParentSimulation *sim)
     }
 
     /* ── Title bar ──────────────────────────────────────────────────── */
-    DrawText("Milestone 6 – Node Access Synchronisation",
+    DrawText("Milestone 7 – FCFS / SJF Scheduling",
              10, 10, 18, (Color){160, 200, 255, 220});
 }
