@@ -36,6 +36,9 @@ typedef struct {
     int next_node;
     int is_destination;
     int is_finished;
+    int no_path;        /* NEW (Milestone 5): 1 if the child discovered it
+                          * has no path to its destination (disconnected
+                          * graph); 0 for all regular messages. */
 } IPC_Message;
 
 /* ═══════════════════════════════════════════════════════════════════════════
