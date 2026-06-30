@@ -111,7 +111,7 @@ int schedule_next(void)
 
     g_scheduler.is_empty = (g_scheduler.head == NULL);
 
-    printf("[Scheduler] Dispatching child_id=%d\n", result);
+    printf("[Scheduler] Decision: Dispatching task ID=%d\n", result);
     return result;
 }
 
