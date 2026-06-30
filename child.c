@@ -51,6 +51,58 @@ static bool parse_input_file_m5(const char *filename,
     while (fgets(line, sizeof(line), fp)) {
         if (is_skip_line(line)) continue;
         if (sscanf(line, "%d %d", &num_nodes, &num_edges) == 2) break;
+        // ==========================================================
+        // SYNCHRONIZATION: Access and lock the unique node semaphore
+        // ==========================================================
+        char sem_name[32];
+        sprintf(sem_name, "/node_sem_%d", msg.current_node);
+        
+        /* Open or connect to the named semaphore for the current node (initially 1) */
+        sem_t *node_sem = sem_open(sem_name, O_CREAT, 0666, 1);
+        
+        /* Block and wait here if another passenger process currently occupies this node */
+        sem_wait(node_sem); 
+        // ==========================================================
+
+        /* Send current location update to parent via IPC pipe */
+        /* Only executed AFTER successfully acquiring the node lock */
+        write(write_fd, &msg, sizeof(IPC_Message));
+
+        /* --- EXAM TASK A: Wait for parent's signal approval --- */
+sigset_t sigset;
+int sig;
+sigemptyset(&sigset);
+sigaddset(&sigset, SIGUSR1);
+sigprocmask(SIG_BLOCK, &sigset, NULL);
+
+sigwait(&sigset, &sig); 
+
+
+        /* If destination reached, terminate the travel loop */
+        if (msg.is_destination) {
+            /* Release the node semaphore before exiting the loop */
+            sem_post(node_sem);
+            sem_close(node_sem);
+            break;
+        }
+
+        /* Travel across the edge: W hops × 300 ms each */
+        int W = weights[i];
+        for (int hop = 0; hop < W; hop++) {
+            usleep(300 * 1000); /* 300 ms */
+        }
+
+        /* Intermediate node wait time (1 second) */
+        usleep(1000 * 1000); /* 1s */
+
+        // ==========================================================
+        // SYNCHRONIZATION: Departure from node - release the lock
+        // ==========================================================
+        /* Unlock the semaphore to allow the next waiting passenger to enter */
+        sem_post(node_sem);  
+        /* Close the local descriptor link to this named semaphore */
+        sem_close(node_sem); 
+        // ==========================================================
     }
 
     if (num_nodes <= 0) {
@@ -303,7 +355,7 @@ static void handle_termination(int sig)
     g_terminate = 1;
 }
 
-void run_child(const int *path, int path_len, const int *weights)
+vvoid run_child(const int *path, int path_len, const int *weights)
 {
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
@@ -342,6 +394,16 @@ void run_child(const int *path, int path_len, const int *weights)
             
         sem_post(sem);
         // End Critical Section
+
+        /* ─── EXAM TASK A: Wait for Parent Approval via Signal ─── */
+        sigset_t sigset;
+        int sig;
+        sigemptyset(&sigset);
+        sigaddset(&sigset, SIGUSR1);
+        sigprocmask(SIG_BLOCK, &sigset, NULL);
+        
+        sigwait(&sigset, &sig);
+       
     }
  
     while (!g_terminate)
