@@ -89,6 +89,14 @@ void schedule_add(int child_id, int estimated_time)
     }
 
     g_scheduler.is_empty = false;
+
+    printf("[Scheduler] Current queue status:\n");
+    QueueNode *curr = g_scheduler.head;
+    while(curr != NULL) {
+        printf(" -> Child %d (Burst: %d)\n", curr->child_id, curr->estimated_time);
+        curr = curr->next;
+    }
+    
     printf("[Scheduler] Added child_id=%d burst=%d  (algo=%s)\n",
            child_id, estimated_time,
            g_scheduler.type == SCHED_SJF ? "SJF" : "FCFS");
@@ -105,7 +113,11 @@ int schedule_next(void)
 
     QueueNode *front  = g_scheduler.head;
     int        result = front->child_id;
-
+    printf("[Scheduler] Selecting child_id=%d to run (Reason: %s policy, burst time=%d)\n", 
+            result, 
+            g_scheduler.type == SCHED_SJF ? "SJF" : "FCFS", 
+            front->estimated_time);
+    
     g_scheduler.head = front->next;
     free(front);
 
